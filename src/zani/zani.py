@@ -161,6 +161,29 @@ class Genome:
         self._view = memoryview(seq)
         self._size = len(seq)
 
+    @classmethod
+    def from_file(cls, file: str | Path, file_type: SeqFileType | None = None, concat: bool = True) -> 'Genome':
+        """Creates a Genome instance directly from a sequence file.
+        
+        Reads the first sequence (or concatenated sequences if concat=True) 
+        from the specified file.
+        
+        Args:
+            file (str | Path): The path to the sequence file.
+            file_type (SeqFileType | None, optional): The type of sequence file. Defaults to None.
+            concat (bool, optional): If True, concatenates all sequences (FASTA only). Defaults to True.
+            
+        Returns:
+            Genome: A new Genome instance.
+            
+        Raises:
+            SeqFileError: If the file is empty or cannot be parsed.
+        """
+        with SeqFile(file, file_type=file_type, concat=concat) as seq_file:
+            for name, seq in seq_file:
+                return cls(seq, name)
+        raise SeqFileError(f"No sequences found in {file}")
+
     @property
     def name(self) -> bytes:
         return self._name
@@ -327,3 +350,52 @@ class ZaniEngine:
             # Refill the pipeline with the exact number of jobs that just finished
             for query in islice(queries_iter, len(done)):
                 futures.add(self.executor.submit(self._compress_only, query))
+
+
+class TsvWriter:
+    """A thread-safe writer for ZaniResult objects to a TSV file.
+
+    This class is designed to be used as a context manager. It handles opening
+    and closing the file, and ensures that concurrent writes from multiple
+    threads do not corrupt the output file.
+
+    Examples:
+        >>> results = [ZaniResult(b"ref", b"g1", 0.5), ZaniResult(b"ref", b"g2", 0.6)]
+        >>> with TsvWriter("results.tsv") as writer:
+        ...     for result in results:
+        ...         writer.write(result)
+    """
+    __slots__ = ('_file_path', '_fh', '_lock', '_header')
+
+    def __init__(self, file_path: str | Path, header: bool = True):
+        """Initializes the TsvWriter.
+
+        Args:
+            file_path (str | Path): The path to the output TSV file.
+            header (bool, optional): If True, writes a header row. Defaults to True.
+        """
+        self._file_path = file_path
+        self._header = header
+        self._fh: IO[str] | None = None
+        self._lock = threading.Lock()
+
+    def __enter__(self) -> 'TsvWriter':
+        """Opens the file for writing and writes the header."""
+        self._fh = open(self._file_path, 'w', encoding='utf-8')
+        if self._header:
+            self._fh.write("reference\tgenome\tncd\n")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Closes the file."""
+        if self._fh:
+            self._fh.close()
+
+    def write(self, result: ZaniResult):
+        """Writes a ZaniResult to the file in a thread-safe manner."""
+        if self._fh is None:
+            raise IOError("TsvWriter is not open. Use a 'with' statement.")
+
+        line = f"{result.reference_name.decode('utf-8')}\t{result.genome_name.decode('utf-8')}\t{result.ncd:.6f}\n"
+        with self._lock:
+            self._fh.write(line)
