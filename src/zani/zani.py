@@ -1,7 +1,7 @@
 from io import IOBase
 from pathlib import Path
-from enum import Enum, auto
 from re import compile as re_compile
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from compression.bz2 import open as bz_open
@@ -13,27 +13,19 @@ from typing import IO, Iterable, NamedTuple, Generator
 from itertools import islice
 
 
-class SeqFileType(Enum):
-    FASTA = auto()
-    FASTQ = auto()
-    
-    
+# Classes --------------------------------------------------------------------------------------------------------------
 class SeqFileError(Exception):
     pass
 
 
-class SeqFile:
-    _REGEXES = {
-        SeqFileType.FASTA: re_compile(r'\.(?P<ext>f(asta|a|na|fn|as|aa))\.?(?P<comp>(gz|bz2|xz|zst))?$'),
-        SeqFileType.FASTQ: re_compile(r'\.(?P<ext>f(astq|q))\.?(?P<comp>(gz|bz2|xz|zst))?$')
-    }
+class FastaFile:
+    _REGEX = re_compile(r'\.(?P<ext>f(asta|a|na|fn|as|aa))\.?(?P<comp>(gz|bz2|xz|zst))?$')
     _DELETE_NEWLINES = b'\r\n'
     _OPENERS = {'gz': gz_open, 'bz2': bz_open, 'xz': lz_open, 'zst': zst_open}
-    __slots__ = ('_file', '_file_type', '_fh', '_opener', '_is_stream', '_concat', '_base_name')
+    __slots__ = ('_file', '_fh', '_opener', '_is_stream', '_concat', '_base_name')
 
-    def __init__(self, file: str | Path | IO[bytes], file_type: SeqFileType | None = None, concat: bool = True):
+    def __init__(self, file: str | Path | IO[bytes], concat: bool = True):
         self._file = file
-        self._file_type = file_type
         self._fh = None
         self._opener = open
         self._is_stream = isinstance(file, IOBase)
@@ -41,8 +33,6 @@ class SeqFile:
         self._base_name = None
 
         if self._is_stream:
-            if not self._file_type:
-                raise SeqFileError('Must provide a SeqFileType when file is a stream')
             self._fh = file
         else:
             self._file = Path(file)
@@ -50,23 +40,14 @@ class SeqFile:
             lower_name = original_name.lower()
 
             # Attempt to automatically determine type and compression
-            fasta_match = self._REGEXES[SeqFileType.FASTA].search(lower_name)
-            fastq_match = self._REGEXES[SeqFileType.FASTQ].search(lower_name)
-            match = fasta_match or fastq_match
-
+            fasta_match = self._REGEX.search(lower_name)
+            match = fasta_match
             # Extract the pristine base name by slicing off the matched regex
             # e.g., "E_coli_K12.fasta.gz" -> b"E_coli_K12"
             if match:
                 self._base_name = original_name[:match.start()].encode('utf-8')
             else:
                 self._base_name = self._file.stem.encode('utf-8')
-
-            # Prioritize explicitly passed file_type, fallback to regex detection
-            if not self._file_type:
-                if fasta_match and fasta_match.group('ext'):
-                    self._file_type = SeqFileType.FASTA
-                else:
-                    raise SeqFileError(f"Could not infer file type from filename: {original_name}")
 
             # Determine correct file opener based on compression extension
             if match and match.group('comp'):
@@ -75,12 +56,45 @@ class SeqFile:
     def __iter__(self) -> Generator[tuple[bytes, bytes], None, None]:
         if self._fh is None:
             raise SeqFileError("File not open. Use the context manager ('with SeqFile(...) as f:').")
+        content = self._fh.read()
+        if not content:
+            return
 
-        if self._file_type == SeqFileType.FASTA:
-            # Pass our pristine base name down to the static parser
-            yield from self._parse_fasta(self._fh, self._concat, self._base_name)
-        elif self._file_type == SeqFileType.FASTQ:
-            yield from self._parse_fastq(self._fh)
+        # Using an iterator prevents slicing [1:] which would clone the list in RAM
+        records = iter(content.split(b'>'))
+        next(records, None)  # Swiftly discard the empty chunk before the first '>'
+
+        # Mode 1: Discrete Pairwise Mode (Yield each record individually)
+        if not self._concat:
+            for record in records:
+                if record:
+                    header, _, seq_data = record.partition(b'\n')
+                    name = header.split(None, 1)[0].rstrip()
+                    seq = seq_data.translate(None, delete=FastaFile._DELETE_NEWLINES)
+                    yield name, seq
+
+        # Mode 2: Whole Seq Assembly Mode (Concatenate into a single sequence)
+        else:
+            try:
+                first_record = next(records)
+            except StopIteration:
+                return  # Empty or invalid fasta
+                
+            header, _, seq_data = first_record.partition(b'\n')
+            first_name = self._base_name or header.split(None, 1)[0].rstrip()
+            
+            # Seed the chunks array with the first sequence
+            seq_chunks = [seq_data.translate(None, delete=FastaFile._DELETE_NEWLINES)]
+            
+            # Use a C-optimized list comprehension to consume the rest!
+            # This is measurably faster than a generator expression as it executes entirely in C.
+            seq_chunks.extend([
+                record.partition(b'\n')[2].translate(None, delete=FastaFile._DELETE_NEWLINES)
+                for record in records if record
+            ])
+
+            if seq_chunks:
+                yield first_name, b"".join(seq_chunks)
 
     def __enter__(self):
         """Opens the file for reading."""
@@ -94,66 +108,9 @@ class SeqFile:
             self._fh.close()
             self._fh = None
 
-    @staticmethod
-    def _parse_fasta(fh: IO[bytes], concat: bool, base_name: bytes | None) -> Generator[
-        tuple[bytes, bytes], None, None]:
-        content = fh.read()
-        if not content:
-            return
 
-        records = content.split(b'>')
-
-        # Mode 1: Discrete Pairwise Mode (Yield each record individually)
-        if not concat:
-            for record in records:
-                if not record:
-                    continue
-                header, _, seq_data = record.partition(b'\n')
-                name = header.split(None, 1)[0].rstrip()
-                seq = seq_data.translate(None, delete=SeqFile._DELETE_NEWLINES)
-                yield name, seq
-
-        # Mode 2: Whole Genome Assembly Mode (Concatenate into a single sequence)
-        else:
-            first_name = base_name  # Initialize with our stripped filename!
-            seq_chunks = []
-
-            for record in records:
-                if not record:
-                    continue
-                header, _, seq_data = record.partition(b'\n')
-
-                # Fallback: If it's a stream, base_name is None, so we grab the first contig header
-                if not first_name:
-                    first_name = header.split(None, 1)[0].rstrip()
-
-                seq_chunks.append(seq_data.translate(None, delete=SeqFile._DELETE_NEWLINES))
-
-            if first_name and seq_chunks:
-                # b"".join is executed in highly optimized C
-                yield first_name, b"".join(seq_chunks)
-
-    @staticmethod
-    def _parse_fastq(fh: IO[bytes]) -> Generator[tuple[bytes, bytes], None, None]:
-        iterator = iter(fh)
-        for line in iterator:
-            if not line:
-                continue
-            # 64 corresponds to ASCII '@'
-            if line[0] == 64:
-                # Split at first whitespace to isolate the ID, stripping off the '@'
-                name = line[1:].split(None, 1)[0].rstrip()
-                try:
-                    seq = next(iterator).rstrip()
-                    next(iterator)  # Skip the '+' line
-                    next(iterator)  # Skip the quality scores line
-                    yield name, seq
-                except StopIteration:
-                    break  # Handles gracefully truncated FASTQ streams
-
-
-class Genome:
-    """An ultra-lean data container representing the genome sequence of a single sample"""
+class SeqRecord:
+    """An ultra-lean data container representing the sequence of a single sample"""
     __slots__ = ('_name', '_view', '_size')
 
     def __init__(self, seq: bytes, name: bytes):
@@ -162,27 +119,28 @@ class Genome:
         self._size = len(seq)
 
     @classmethod
-    def from_file(cls, file: str | Path, file_type: SeqFileType | None = None, concat: bool = True) -> 'Genome':
-        """Creates a Genome instance directly from a sequence file.
+    def from_file(cls, file: str | Path, concat: bool = True) -> 'SeqRecord':
+        """Creates a Seq instance directly from a sequence file.
         
         Reads the first sequence (or concatenated sequences if concat=True) 
         from the specified file.
         
         Args:
             file (str | Path): The path to the sequence file.
-            file_type (SeqFileType | None, optional): The type of sequence file. Defaults to None.
             concat (bool, optional): If True, concatenates all sequences (FASTA only). Defaults to True.
             
         Returns:
-            Genome: A new Genome instance.
+            SeqRecord: A new Seq instance.
             
         Raises:
             SeqFileError: If the file is empty or cannot be parsed.
         """
-        with SeqFile(file, file_type=file_type, concat=concat) as seq_file:
-            for name, seq in seq_file:
+        with FastaFile(file, concat=concat) as seq_file:
+            try:
+                name, seq = next(iter(seq_file))
                 return cls(seq, name)
-        raise SeqFileError(f"No sequences found in {file}")
+            except StopIteration:
+                raise SeqFileError(f"No sequences found in {file}")
 
     @property
     def name(self) -> bytes:
@@ -197,7 +155,7 @@ class Genome:
         return self._size
 
 
-class Reference(Genome):
+class Reference(SeqRecord):
     """
     The ZANI equivalent of a 'sketch'.
     Holds the pre-trained Zstd dictionary and baseline metrics.
@@ -207,9 +165,17 @@ class Reference(Genome):
     def __init__(self, seq: bytes, name: bytes, opts: dict | None = None):
         super().__init__(seq, name)
         self._opts = opts or self._get_default_dna_options()
-        # train_dict expects an iterable of samples, so we wrap our view in a list.
-        # 1MB dictionary size is generally optimal for bacterial genomes.
-        self._dict = train_dict([self._view], dict_size=1024 * 1024)
+        
+        # Zstandard dictionary training expects multiple independent samples (usually small chunks),
+        # not a single massive contiguous block. We can slice the memoryview 
+        # without copying bytes to efficiently create these samples!
+        chunk_size = 65536  # 64KB chunks
+        chunks = [self._view[i:i + chunk_size] for i in range(0, self._size, chunk_size)]
+        
+        # 1MB dictionary size is optimal for bacterial seq_records. We cap it to half the seq_record 
+        # size just in case an unusually small input sequence is provided.
+        target_dict_size = min(1024 * 1024, max(self._size // 2, 1024))
+        self._dict = train_dict(chunks, dict_size=target_dict_size)
         # Calculate the baseline compressed size using the module-level function
         self._baseline_size = len(compress(self._view, options=self._opts))
 
@@ -218,7 +184,7 @@ class Reference(Genome):
         """Returns default options optimized for a 4-letter alphabet."""
         return {
             CompressionParameter.compression_level: 3,
-            CompressionParameter.min_match: 14,  # Ignore random 4-base DNA collisions
+            CompressionParameter.min_match: 7,  # Max allowed by zstd; helps ignore short random DNA collisions
             CompressionParameter.hash_log: 15,
             CompressionParameter.strategy: Strategy.lazy2
         }
@@ -240,13 +206,16 @@ class ZaniResult(NamedTuple):
     """Data structure representing the results of a pairwise comparison.
 
     Attributes:
-        reference_name (bytes): The name of the reference genome.
-        genome_name (bytes): The name of the queried sample.
+        reference_name (bytes): The name of the reference seq_record.
+        seq_record_name (bytes): The name of the queried sample.
         ncd (float): The Normalized Compression Distance ratio.
     """
     reference_name: bytes  # The name of the reference
-    genome_name: bytes  # The name of the sample
+    seq_record_name: bytes  # The name of the sample
     ncd: float  # Normalized compression distance
+
+    def write(self, fh: IO[bytes]) -> int:
+        return fh.write(b'%b\t%b\t%f\n' % (self.reference_name, self.seq_record_name, self.ncd))
 
 
 class ZaniEngine:
@@ -258,10 +227,10 @@ class ZaniEngine:
     Examples:
         >>> ref = Reference(b"ACGT", b"Reference1")
         >>> engine = ZaniEngine(ref, max_workers=4)
-        >>> queries = [Genome(b"ACGA", b"Query1"), Genome(b"TCGT", b"Query2")]
+        >>> queries = [SeqRecord(b"ACGA", b"Query1"), SeqRecord(b"TCGT", b"Query2")]
         >>> with engine:
-        ...     for result in engine(queries):
-        ...         print(result.genome_name, result.ncd)
+        ...     for result in engine.query(queries):
+        ...         print(result.seq_record_name, result.ncd)
     """
     __slots__ = ('_ref', '_executor', '_max_workers', '_thread_local')
 
@@ -269,7 +238,7 @@ class ZaniEngine:
         """Initializes the ZaniEngine.
 
         Args:
-            ref (Reference): The reference genome sketch to compare against.
+            ref (Reference): The reference seq_record sketch to compare against.
             max_workers (int | None, optional): The maximum number of worker threads. 
                 If None, defaults to the ThreadPoolExecutor's internal default. Defaults to None.
         """
@@ -307,8 +276,20 @@ class ZaniEngine:
             # Ensures all executing threads complete before the context terminates
             self._executor.shutdown(wait=True, cancel_futures=True)
 
-    def _compress_only(self, query: 'Genome') -> ZaniResult:
-        """Optimized for GIL: Math only, GIL is released by zstd."""
+    def _compress_only(self, query: SeqRecord | FastaFile | str | Path) -> ZaniResult:
+        """Executes I/O, parsing, and compression concurrently inside the worker thread."""
+        
+        # Resolve the input into a Seq object before compressing
+        if isinstance(query, FastaFile):
+            with query as seq_file:
+                try:
+                    name, seq = next(iter(seq_file))
+                    query = SeqRecord(seq, name)
+                except StopIteration:
+                    raise SeqFileError(f"No sequences found in {query._file}")
+
+        elif not isinstance(query, SeqRecord):
+            query = SeqRecord.from_file(query)
 
         # Grab the thread's persistent C-context
         comp = self._get_thread_compressor()
@@ -316,27 +297,37 @@ class ZaniEngine:
         # Compress using the persistent workspace
         compressed_bytes = comp.compress(query.view)
 
-        return ZaniResult(
-            self._ref.name,
-            query.name,
-            len(compressed_bytes) / self._ref.baseline_size
-        )
+        c_y_given_x = len(compressed_bytes)
+        c_x = self._ref.baseline_size
+        
+        # Estimate the query's baseline compressed size (C(y)) based on uncompressed length ratio.
+        # This is incredibly fast and avoids compressing the query twice!
+        c_y = c_x * (query.size / self._ref.size)
+        
+        # Use the standard Normalized Compression Distance (NCD) formula:
+        # We approximate C(x,y) as C(x) + C(y|x)
+        ncd = (c_x + c_y_given_x - min(c_x, c_y)) / max(c_x, c_y)
+        
+        # Clamp to [0, 1] to hide tiny compression framing overheads
+        ncd = max(0.0, min(1.0, ncd))
 
-    def __call__(self, queries: Iterable[Genome]) -> Generator[ZaniResult, None, None]:
-        """Compresses an iterable of Genomes against the reference, yielding results lazily.
+        return ZaniResult(self._ref.name, query.name, ncd)
+
+    def query(self, queries: Iterable[SeqRecord | FastaFile | str | Path]) -> Generator[ZaniResult, None, None]:
+        """Compresses an iterable of Seqs against the reference, yielding results lazily.
 
         Uses a bounded worker queue to maintain high throughput without exhausting memory.
 
         Args:
-            queries (Iterable[Genome]): An iterable (or generator) yielding Genome objects.
+            queries (Iterable[SeqRecord | FastaFile | str | Path]): An iterable yielding sequences or file paths.
 
         Yields:
-            ZaniResult: The comparison result for each queried Genome.
+            ZaniResult: The comparison result for each queried Seq.
         """
         queries_iter = iter(queries)
 
         # Keep workers fed with 2x jobs to avoid thread starvation,
-        # whilst preventing memory spikes from loading all Genomes at once.
+        # whilst preventing memory spikes from loading all Seqs at once.
         max_in_flight = (self._max_workers or 32) * 2
 
         futures = {self.executor.submit(self._compress_only, query) for query in islice(queries_iter, max_in_flight)}
@@ -347,12 +338,14 @@ class ZaniEngine:
             for future in done:
                 yield future.result()
 
-            # Refill the pipeline with the exact number of jobs that just finished
-            for query in islice(queries_iter, len(done)):
-                futures.add(self.executor.submit(self._compress_only, query))
+            # Refill the pipeline using set.update and a generator expression (executes loop in C)
+            futures.update(
+                self.executor.submit(self._compress_only, query) 
+                for query in islice(queries_iter, len(done))
+            )
 
 
-class TsvWriter:
+class ZaniWriter:
     """A thread-safe writer for ZaniResult objects to a TSV file.
 
     This class is designed to be used as a context manager. It handles opening
@@ -361,41 +354,66 @@ class TsvWriter:
 
     Examples:
         >>> results = [ZaniResult(b"ref", b"g1", 0.5), ZaniResult(b"ref", b"g2", 0.6)]
-        >>> with TsvWriter("results.tsv") as writer:
+        >>> with ZaniWriter("results.tsv") as writer:
         ...     for result in results:
         ...         writer.write(result)
     """
-    __slots__ = ('_file_path', '_fh', '_lock', '_header')
+    _HEADER = b"reference\tseq_record\tncd\n"
+    __slots__ = ('_file', '_fh', '_lock', '_header', '_is_stream')
 
-    def __init__(self, file_path: str | Path, header: bool = True):
-        """Initializes the TsvWriter.
+    def __init__(self, file: str | Path | IO[bytes] | None = None, header: bool = True):
+        """Initializes the ZaniWriter.
 
         Args:
-            file_path (str | Path): The path to the output TSV file.
+            file (str | Path | IO[bytes] | None): The path or stream for output. Defaults to sys.stdout.buffer.
             header (bool, optional): If True, writes a header row. Defaults to True.
         """
-        self._file_path = file_path
+        self._file = file if file is not None else sys.stdout.buffer
         self._header = header
-        self._fh: IO[str] | None = None
+        self._is_stream = isinstance(self._file, IOBase)
+        self._fh: IO[bytes] | None = self._file if self._is_stream else None
         self._lock = threading.Lock()
 
-    def __enter__(self) -> 'TsvWriter':
+    def __enter__(self) -> 'ZaniWriter':
         """Opens the file for writing and writes the header."""
-        self._fh = open(self._file_path, 'w', encoding='utf-8')
-        if self._header:
-            self._fh.write("reference\tgenome\tncd\n")
+        if not self._is_stream:
+            self._fh = open(self._file, mode='wb')
+        if self._header and self._fh is not None:
+            self._fh.write(self._HEADER)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Closes the file."""
-        if self._fh:
+        """Closes the file, or flushes if it's a stream."""
+        if not self._is_stream and self._fh:
             self._fh.close()
+            self._fh = None
+        elif self._is_stream and self._fh:
+            self._fh.flush()
 
     def write(self, result: ZaniResult):
         """Writes a ZaniResult to the file in a thread-safe manner."""
         if self._fh is None:
-            raise IOError("TsvWriter is not open. Use a 'with' statement.")
-
-        line = f"{result.reference_name.decode('utf-8')}\t{result.genome_name.decode('utf-8')}\t{result.ncd:.6f}\n"
+            raise IOError("ZaniWriter is not open. Use a 'with' statement.")
         with self._lock:
-            self._fh.write(line)
+            result.write(self._fh)
+
+
+# Functions ------------------------------------------------------------------------------------------------------------
+def run_all_vs_all(seq_records: list[SeqRecord], output_tsv: str | Path, max_workers: int = None):
+    """
+    Computes a full N x N pairwise distance matrix and streams it to disk.
+    Requires ZERO external dependencies.
+    """
+    with ZaniWriter(output_tsv) as writer:
+        for g_ref in seq_records:
+            # 1. Initialize the reference (Trains the Zstd dictionary)
+            ref = Reference(seq=g_ref.view, name=g_ref.name)
+
+            # 2. Spin up the engine
+            with ZaniEngine(ref, max_workers=max_workers) as engine:
+
+                # 3. Stream the queries through the engine directly to disk
+                # Because engine.query() is a generator, we never hold more
+                # than `max_workers * 2` results in RAM at any given time!
+                for result in engine.query(seq_records):
+                    writer.write(result)
