@@ -25,18 +25,6 @@ Homepage = "https://tomdstanton.github.io/zani/"
 Repository = "https://github.com/tomdstanton/zani"
 Documentation = "https://tomdstanton.github.io/zani/"
 
-[dependency-groups]
-docs = ["zensical>=0.0.39", "mkdocstrings-python>=2.0.3"]
-test = ["pytest>=9.0.2"]
-dev = [
-    {include-group="docs"},
-    {include-group="test"},
-    "pre-commit>=4.5.1",
-    "tox-uv>=1.33.4",
-    "mypy>=1.19.1",
-    "pytest-cov>=7.0.0",
-    "ruff>=0.15.7",
-]
 
 [project.scripts]
 zani = "zani.cli:main"
@@ -53,74 +41,3 @@ source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/zani/_version.py"
-
-[tool.mypy]
-files = ["src"]
-disallow_untyped_defs = true
-disallow_any_unimported = true
-no_implicit_optional = true
-check_untyped_defs = true
-warn_return_any = true
-warn_unused_ignores = true
-show_error_codes = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
-[tool.ruff]
-target-version = "py314"
-line-length = 120
-fix = true
-
-[tool.ruff.lint]
-select = [
-    # flake8-2020
-    "YTT",
-    # flake8-bandit
-    "S",
-    # flake8-bugbear
-    "B",
-    # flake8-builtins
-    "A",
-    # flake8-comprehensions
-    "C4",
-    # flake8-debugger
-    "T10",
-    # flake8-simplify
-    "SIM",
-    # isort
-    "I",
-    # mccabe
-    "C90",
-    # pycodestyle
-    "E", "W",
-    # pyflakes
-    "F",
-    # pygrep-hooks
-    "PGH",
-    # pyupgrade
-    "UP",
-    # ruff
-    "RUF",
-    # tryceratops
-    "TRY",
-]
-ignore = [
-    # LineTooLong
-    "E501",
-    # DoNotAssignLambda
-    "E731",
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
-
-[tool.ruff.format]
-preview = true
-
-[tool.coverage.report]
-skip_empty = true
-
-[tool.coverage.run]
-branch = true
-source = ["src"]

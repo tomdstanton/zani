@@ -1,16 +1,18 @@
 # `zani` 🧬🗜️🤪
 *pronounced zany (/ˈzeɪni/)*
 
-[![Release](https://img.shields.io/github/v/release/tomdstanton/zani)](https://img.shields.io/github/v/release/tomdstanton/zani)
-[![Build status](https://img.shields.io/github/actions/workflow/status/tomdstanton/zani/main.yml?branch=main)](https://github.com/tomdstanton/zani/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/tomdstanton/zani/branch/main/graph/badge.svg)](https://codecov.io/gh/tomdstanton/zani)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/tomdstanton/zani)](https://img.shields.io/github/commit-activity/m/tomdstanton/zani)
-[![License](https://img.shields.io/github/license/tomdstanton/zani)](https://img.shields.io/github/license/tomdstanton/zani)
+[![Release](https://img.shields.io/github/v/release/tomdstanton/zani?style=flat-square)](https://img.shields.io/github/v/release/tomdstanton/zani)
+[![License](https://img.shields.io/github/license/tomdstanton/zani?style=flat-square)](https://img.shields.io/github/license/tomdstanton/zani)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19059429.svg?style=flat-square)](https://doi.org/10.5281/zenodo.19059429)
+[![PyPI](https://img.shields.io/pypi/v/zani.svg?style=flat-square&maxAge=3600&logo=PyPI)](https://pypi.org/project/zani)
+[![Wheel](https://img.shields.io/pypi/wheel/zani.svg?style=flat-square&maxAge=3600)](https://pypi.org/project/zani/#files)
+[![Python Versions](https://img.shields.io/pypi/pyversions/zani.svg?style=flat-square&maxAge=600&logo=python)](https://pypi.org/project/zani/#files)
+[![Python Implementations](https://img.shields.io/pypi/implementation/zani.svg?style=flat-square&maxAge=600&label=impl)](https://pypi.org/project/zani/#files)
+[![Source](https://img.shields.io/badge/source-GitHub-303030.svg?maxAge=2678400&style=flat-square)](https://github.com/tomdstanton/zani/)
+[![Issues](https://img.shields.io/github/issues/tomdstanton/zani.svg?style=flat-square&maxAge=600)](https://github.com/tomdstanton/zani/issues)
+[![Downloads](https://img.shields.io/pypi/dm/zani?style=flat-square&color=303f9f&maxAge=86400&label=downloads)](https://pepy.tech/project/zani)[![License](https://img.shields.io/github/license/tomdstanton/zani)](https://img.shields.io/github/license/tomdstanton/zani)
 
 **Average Nucleotide Identity (ANI) estimator using Zstandard compression distance.**
-
-- **Github repository**: <https://github.com/tomdstanton/zani/>
-- **Documentation** <https://tomdstanton.github.io/zani/>
 
 ## About
 `zani` computes pairwise genomic distances using the Normalized Compression Distance (NCD) metric.
