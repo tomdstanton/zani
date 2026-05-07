@@ -1,7 +1,6 @@
 from io import IOBase
 from pathlib import Path
 from re import compile as re_compile
-import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from compression.bz2 import open as bz_open
@@ -10,7 +9,7 @@ from compression.lzma import open as lz_open
 from compression.zstd import (CompressionParameter, Strategy, ZstdDict, ZstdCompressor, compress, train_dict,
                               open as zst_open)
 from typing import IO, Iterable, NamedTuple, Generator
-from itertools import islice
+from itertools import islice, chain
 
 
 # Classes --------------------------------------------------------------------------------------------------------------
@@ -162,7 +161,7 @@ class Reference(SeqRecord):
     """
     __slots__ = ('_dict', '_baseline_size', '_opts')
 
-    def __init__(self, seq: bytes, name: bytes, opts: dict | None = None):
+    def __init__(self, seq: bytes | memoryview, name: bytes, opts: dict | None = None):
         super().__init__(seq, name)
         self._opts = opts or self._get_default_dna_options()
         
@@ -232,33 +231,43 @@ class ZaniEngine:
         ...     for result in engine.query(queries):
         ...         print(result.seq_record_name, result.ncd)
     """
-    __slots__ = ('_ref', '_executor', '_max_workers', '_thread_local')
+    __slots__ = ('_ref', '_ref_id', '_executor', '_max_workers', '_thread_local')
 
-    def __init__(self, ref: Reference, max_workers: int | None = None):
+    def __init__(self, ref: Reference | None = None, max_workers: int | None = None):
         """Initializes the ZaniEngine.
 
         Args:
-            ref (Reference): The reference seq_record sketch to compare against.
+            ref (Reference | None, optional): The reference seq_record sketch to compare against.
             max_workers (int | None, optional): The maximum number of worker threads. 
                 If None, defaults to the ThreadPoolExecutor's internal default. Defaults to None.
         """
-        self._ref = ref
+        self._ref = None
+        self._ref_id = None
+        if ref is not None:
+            self.set_reference(ref)
+            
         self._max_workers = max_workers
         self._executor = None
         # Thread-local storage to cache our C-level ZstdCompressor contexts
         self._thread_local = threading.local()
+
+    def set_reference(self, ref: Reference):
+        """Updates the reference sketch and signals workers to load the new dictionary."""
+        self._ref = ref
+        self._ref_id = id(ref)
 
     def _get_thread_compressor(self) -> ZstdCompressor:
         """
         Retrieves or initializes a reusable C-level compression context
         for the current worker thread.
         """
-        if not hasattr(self._thread_local, 'compressor'):
-            # Instantiated exactly once per worker thread!
+        # Spin up a new C-context ONLY if the thread doesn't have one, or the reference has changed!
+        if not hasattr(self._thread_local, 'ref_id') or self._thread_local.ref_id != self._ref_id:
             self._thread_local.compressor = ZstdCompressor(
                 options=self._ref.opts,
                 zstd_dict=self._ref.zstd_dict
             )
+            self._thread_local.ref_id = self._ref_id
         return self._thread_local.compressor
 
     @property
@@ -276,20 +285,29 @@ class ZaniEngine:
             # Ensures all executing threads complete before the context terminates
             self._executor.shutdown(wait=True, cancel_futures=True)
 
-    def _compress_only(self, query: SeqRecord | FastaFile | str | Path) -> ZaniResult:
-        """Executes I/O, parsing, and compression concurrently inside the worker thread."""
-        
-        # Resolve the input into a Seq object before compressing
-        if isinstance(query, FastaFile):
-            with query as seq_file:
+    @staticmethod
+    def _resolve_to_seq_record(item: SeqRecord | FastaFile | str | Path) -> SeqRecord:
+        """Resolves various input types into a single SeqRecord."""
+        if isinstance(item, FastaFile):
+            with item as seq_file:
                 try:
                     name, seq = next(iter(seq_file))
-                    query = SeqRecord(seq, name)
+                    return SeqRecord(seq, name)
                 except StopIteration:
-                    raise SeqFileError(f"No sequences found in {query._file}")
+                    raise SeqFileError(f"No sequences found in {item._file}")
+        elif not isinstance(item, SeqRecord):
+            return SeqRecord.from_file(item)
+        return item  # It's already a SeqRecord
 
-        elif not isinstance(query, SeqRecord):
-            query = SeqRecord.from_file(query)
+    def _compress_only(self, query: SeqRecord | FastaFile | str | Path) -> ZaniResult:
+        """Executes I/O, parsing, and compression concurrently inside the worker thread."""
+
+        # Resolve the input into a Seq object before compressing
+        query = ZaniEngine._resolve_to_seq_record(query)
+
+        # Guard against corrupted / empty sequences
+        if self._ref.size == 0 or query.size == 0:
+            return ZaniResult(self._ref.name, query.name, float('nan'))
 
         # Grab the thread's persistent C-context
         comp = self._get_thread_compressor()
@@ -326,6 +344,19 @@ class ZaniEngine:
         """
         queries_iter = iter(queries)
 
+        if self._ref is None:
+            # If no reference is set, use the first item from the query iterable.
+            try:
+                first_query = next(queries_iter)
+            except StopIteration:
+                return  # No queries provided, so nothing to do.
+
+            ref_record = ZaniEngine._resolve_to_seq_record(first_query)
+            # Create and set the reference from the resolved record
+            self.set_reference(Reference(seq=ref_record.view, name=ref_record.name))
+            # Put the query back at the front of the iterator!
+            queries_iter = chain([ref_record], queries_iter)
+
         # Keep workers fed with 2x jobs to avoid thread starvation,
         # whilst preventing memory spikes from loading all Seqs at once.
         max_in_flight = (self._max_workers or 32) * 2
@@ -343,77 +374,26 @@ class ZaniEngine:
                 self.executor.submit(self._compress_only, query) 
                 for query in islice(queries_iter, len(done))
             )
-
-
-class ZaniWriter:
-    """A thread-safe writer for ZaniResult objects to a TSV file.
-
-    This class is designed to be used as a context manager. It handles opening
-    and closing the file, and ensures that concurrent writes from multiple
-    threads do not corrupt the output file.
-
-    Examples:
-        >>> results = [ZaniResult(b"ref", b"g1", 0.5), ZaniResult(b"ref", b"g2", 0.6)]
-        >>> with ZaniWriter("results.tsv") as writer:
-        ...     for result in results:
-        ...         writer.write(result)
-    """
-    _HEADER = b"reference\tseq_record\tncd\n"
-    __slots__ = ('_file', '_fh', '_lock', '_header', '_is_stream')
-
-    def __init__(self, file: str | Path | IO[bytes] | None = None, header: bool = True):
-        """Initializes the ZaniWriter.
-
+            
+    def all_vs_all(self, queries: Iterable[SeqRecord | FastaFile | str | Path]) -> Generator[ZaniResult, None, None]:
+        """Computes a full N x N pairwise distance matrix for all provided sequences.
+        
+        Parses all sequences into memory once to avoid N^2 parsing overhead from disk.
+        It then sequentially rotates each sequence as the reference sketch, while 
+        parallelizing the inner compression loop across the worker pool.
+        
         Args:
-            file (str | Path | IO[bytes] | None): The path or stream for output. Defaults to sys.stdout.buffer.
-            header (bool, optional): If True, writes a header row. Defaults to True.
+            queries: An iterable yielding sequences or file paths.
+            
+        Yields:
+            ZaniResult: The pairwise comparison results.
         """
-        self._file = file if file is not None else sys.stdout.buffer
-        self._header = header
-        self._is_stream = isinstance(self._file, IOBase)
-        self._fh: IO[bytes] | None = self._file if self._is_stream else None
-        self._lock = threading.Lock()
-
-    def __enter__(self) -> 'ZaniWriter':
-        """Opens the file for writing and writes the header."""
-        if not self._is_stream:
-            self._fh = open(self._file, mode='wb')
-        if self._header and self._fh is not None:
-            self._fh.write(self._HEADER)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Closes the file, or flushes if it's a stream."""
-        if not self._is_stream and self._fh:
-            self._fh.close()
-            self._fh = None
-        elif self._is_stream and self._fh:
-            self._fh.flush()
-
-    def write(self, result: ZaniResult):
-        """Writes a ZaniResult to the file in a thread-safe manner."""
-        if self._fh is None:
-            raise IOError("ZaniWriter is not open. Use a 'with' statement.")
-        with self._lock:
-            result.write(self._fh)
-
-
-# Functions ------------------------------------------------------------------------------------------------------------
-def run_all_vs_all(seq_records: list[SeqRecord], output_tsv: str | Path, max_workers: int = None):
-    """
-    Computes a full N x N pairwise distance matrix and streams it to disk.
-    Requires ZERO external dependencies.
-    """
-    with ZaniWriter(output_tsv) as writer:
-        for g_ref in seq_records:
-            # 1. Initialize the reference (Trains the Zstd dictionary)
-            ref = Reference(seq=g_ref.view, name=g_ref.name)
-
-            # 2. Spin up the engine
-            with ZaniEngine(ref, max_workers=max_workers) as engine:
-
-                # 3. Stream the queries through the engine directly to disk
-                # Because engine.query() is a generator, we never hold more
-                # than `max_workers * 2` results in RAM at any given time!
-                for result in engine.query(seq_records):
-                    writer.write(result)
+        # Materialize all queries into RAM once to completely eliminate N^2 disk read bottlenecks
+        records = [ZaniEngine._resolve_to_seq_record(q) for q in queries]
+                
+        # Execute N x N pairwise comparisons
+        for g_ref in records:
+            # Re-wrap the existing SeqRecord as a Reference (sketch)
+            # This trains the dictionary for the current reference genome
+            self.set_reference(Reference(seq=g_ref.view, name=g_ref.name, opts=self._ref.opts if self._ref else None))
+            yield from self.query(records)

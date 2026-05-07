@@ -1,6 +1,4 @@
 import argparse
-from pathlib import Path
-
 from zani._version import __version__
 
 
@@ -9,20 +7,16 @@ def main():
 
     # Define args ------------------------------------------------------------------------------------------------------
     parser = argparse.ArgumentParser(
-        description='Graph-aware contextual annotation of targeted genomic features',
-        usage="%(prog)s <reference> <genomes ...> [options]", add_help=False, prog=__package__,
+        description='🧬🗜️🤪 Average Nucleotide Identity (ANI) estimator using Zstandard compression distance.',
+        usage="%(prog)s <genomes ...> [options]", add_help=False, prog=__package__,
         formatter_class=argparse.MetavarTypeHelpFormatter,
     )
 
     inputs = parser.add_argument_group('📁', 'Input arguments')
-    inputs.add_argument('reference', type=Path, metavar='<reference>',
-                        help='Path to a reference genome in fasta format; File may be compressed.')
-    inputs.add_argument('genomes', type=str, nargs="+", metavar='<genomes ...>',
-                        help='Paths to query genomes in fasta format; Files may be compressed.')
-
-    outs = parser.add_argument_group('💾', 'Output arguments')
-    outs.add_argument('-o', '--out', type=Path, default=None, metavar='',
-                      help='Direct output to file, defaults to stdout')
+    inputs.add_argument('genomes', nargs="+", type=str, metavar='<genomes ...>',
+                        help='Paths to genomes in fasta format; Files may be compressed.')
+    inputs.add_argument('-a', '--allvsall', action="store_true",
+                        help='Run all-vs-all comparison')
 
     opts = parser.add_argument_group('🛠️', 'Other options')
     opts.add_argument('-t', '--max-workers', type=int, default=None, metavar='',
@@ -36,15 +30,9 @@ def main():
     args = parser.parse_args()
 
     # Run pipeline -----------------------------------------------------------------------------------------------------
-    from zani.zani import ZaniEngine, ZaniWriter, Reference, SeqRecord
+    from zani.zani import ZaniEngine
+    from sys import stdout
 
-    reference = Reference.from_file(args.reference)
-    
-    # We use map to create a lazy iterator! The main thread acts as a dedicated 
-    # I/O & Gzip worker (streaming sequentially off disk), perfectly feeding the 
-    # thread pool which acts as dedicated Zstd compression workers.
-    queries = map(SeqRecord.from_file, args.genomes)
-
-    with ZaniWriter(args.out) as writer, ZaniEngine(reference, max_workers=args.max_workers) as engine:
-        for result in engine.query(queries):
-            writer.write(result)
+    with ZaniEngine(max_workers=args.max_workers) as engine:
+        for result in (engine.all_vs_all if args.allvsall else engine.query)(args.genomes):
+            result.write(stdout.buffer)
