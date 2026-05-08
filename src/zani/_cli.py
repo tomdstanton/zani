@@ -15,8 +15,6 @@ def main():
     inputs = parser.add_argument_group('📁', 'Input arguments')
     inputs.add_argument('genomes', nargs="+", type=str, metavar='<genomes ...>',
                         help='Paths to genomes in fasta format; Files may be compressed.')
-    inputs.add_argument('-a', '--allvsall', action="store_true",
-                        help='Run all-vs-all comparison')
 
     opts = parser.add_argument_group('🛠️', 'Other options')
     opts.add_argument('-t', '--max-workers', type=int, default=None, metavar='',
@@ -30,9 +28,10 @@ def main():
     args = parser.parse_args()
 
     # Run pipeline -----------------------------------------------------------------------------------------------------
-    from zani.zani import ZaniEngine
+    from zani._engine import ZaniPipeline, ZaniEngine, SeqRecord
     from sys import stdout
 
-    with ZaniEngine(max_workers=args.max_workers) as engine:
-        for result in (engine.all_vs_all if args.allvsall else engine.query)(args.genomes):
+    genomes = map(SeqRecord.from_file, args.genomes)
+    with ZaniPipeline(ZaniEngine(), args.max_workers) as pipeline:
+        for result in pipeline.all_vs_all(genomes):
             result.write(stdout.buffer)

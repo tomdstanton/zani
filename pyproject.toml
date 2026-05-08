@@ -27,7 +27,7 @@ Documentation = "https://tomdstanton.github.io/zani/"
 
 
 [project.scripts]
-zani = "zani.cli:main"
+zani = "zani._cli:main"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
