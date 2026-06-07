@@ -9,5 +9,5 @@ name = "_zani_rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py310"] }
 zani = { path = "../zani" }

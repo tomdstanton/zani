@@ -7,6 +7,8 @@ license = {file = "LICENSE"}
 dynamic = ["version"]
 keywords = ["bioinformatics", "ani", "pathogens", "genomics", "rust"]
 requires-python = ">=3.10"
+dependencies = []
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -35,3 +37,8 @@ build-backend = "maturin"
 python-source = "python"
 manifest-path = "crates/zani-py/Cargo.toml" 
 module-name = "zani._zani_rs"
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "maturin>=1.5.0",
+]
