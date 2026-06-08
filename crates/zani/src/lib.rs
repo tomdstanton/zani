@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 
 /// Zstandard Compression Strategies mapped to zstd_sys
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 #[repr(u32)]
 pub enum CompressionStrategy {
     Auto = 0,
@@ -22,17 +22,12 @@ pub enum CompressionStrategy {
     Dfast = 2,
     Greedy = 3,
     Lazy = 4,
+    #[default]
     Lazy2 = 5,
     BtLazy2 = 6,
     BtOpt = 7,
     BtUltra = 8,
     BtUltra2 = 9,
-}
-
-impl Default for CompressionStrategy {
-    fn default() -> Self {
-        Self::Lazy2
-    }
 }
 
 // ==========================================
@@ -291,7 +286,7 @@ impl Database {
         unsafe {
             let mut cparams = zstd_sys::ZSTD_getCParams(level, 0, raw_dict.len());
             if strategy as u32 != 0 {
-                cparams.strategy = std::mem::transmute(strategy as u32);
+                cparams.strategy = std::mem::transmute::<u32, zstd_sys::ZSTD_strategy>(strategy as u32);
             }
             let cdict_ptr = zstd_sys::ZSTD_createCDict_advanced(
                 raw_dict.as_ptr() as *const libc::c_void,
@@ -346,7 +341,7 @@ impl Database {
             unsafe {
                 let mut cparams = zstd_sys::ZSTD_getCParams(level, 0, raw_bytes.len());
                 if strategy as u32 != 0 {
-                    cparams.strategy = std::mem::transmute(strategy as u32);
+                    cparams.strategy = std::mem::transmute::<u32, zstd_sys::ZSTD_strategy>(strategy as u32);
                 }
                 let cdict_ptr = zstd_sys::ZSTD_createCDict_advanced(
                     raw_bytes.as_ptr() as *const libc::c_void,
