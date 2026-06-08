@@ -17,7 +17,7 @@ fn test_all_vs_all_matrix() {
             let entry = entry.unwrap();
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("gz") {
-                db.add_fasta(&path, 3, true);
+                db.add_fasta(&path, 3, zani::CompressionStrategy::Lazy2, true);
             }
         }
     }

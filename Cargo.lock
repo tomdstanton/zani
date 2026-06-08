@@ -1204,7 +1204,7 @@ dependencies = [
 
 [[package]]
 name = "zani"
-version = "0.0.1-alpha.1"
+version = "0.0.1-beta.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "zani-py"
-version = "0.0.1-alpha.1"
+version = "0.0.1-beta.1"
 dependencies = [
  "pyo3",
  "zani",
