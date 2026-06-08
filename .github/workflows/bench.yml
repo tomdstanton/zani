@@ -24,5 +24,8 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
         
+    - name: Install just
+      uses: taiki-e/install-action@just
+        
     - name: Run Regression Benchmarks
-      run: cargo bench --workspace
+      run: just bench

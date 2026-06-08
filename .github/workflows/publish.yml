@@ -14,11 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install just
+        uses: taiki-e/install-action@just
       - name: Inject version from Git tag
         shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          sed "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+          just set-version $VERSION
       - uses: PyO3/maturin-action@v1
         with:
           manylinux: auto
@@ -34,11 +36,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install just
+        uses: taiki-e/install-action@just
       - name: Inject version from Git tag
         shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          sed "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+          just set-version $VERSION
       - uses: PyO3/maturin-action@v1
         with:
           command: build
@@ -56,11 +60,13 @@ jobs:
         target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
+      - name: Install just
+        uses: taiki-e/install-action@just
       - name: Inject version from Git tag
         shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          sed "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+          just set-version $VERSION
       - uses: PyO3/maturin-action@v1
         with:
           command: build
@@ -75,11 +81,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install just
+        uses: taiki-e/install-action@just
       - name: Inject version from Git tag
         shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          sed "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+          just set-version $VERSION
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:

@@ -30,14 +30,14 @@ jobs:
       with:
         enable-cache: true
         
+    - name: Install just
+      uses: taiki-e/install-action@just
+
     - name: Install Python and Sync Dependencies
-      run: uv sync
+      run: just sync
         
-    - name: Run Cargo Clippy
-      run: cargo clippy --workspace -- -D warnings
+    - name: Run Cargo Clippy and Format Check
+      run: just check
       
-    - name: Run Cargo Integration Tests
-      run: cargo test --release --workspace
-      
-    - name: Run Python Pytest Suite
-      run: uv run pytest tests/
+    - name: Run Cargo and Python Tests
+      run: just test

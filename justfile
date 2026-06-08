@@ -29,6 +29,19 @@ doc-cli: build
     cargo run --bin zani -- --help >> docs/cli.md
     echo "\`\`\`" >> docs/cli.md
 
+# Build Rust API documentation and generate CLI reference in target/doc
+docs: build
+    cargo doc --no-deps --workspace
+    mkdir -p target/doc/cli
+    echo "# CLI Reference" > target/doc/cli/index.md
+    echo "\`\`\`text" >> target/doc/cli/index.md
+    cargo run --bin zani -- --help >> target/doc/cli/index.md
+    echo "\`\`\`" >> target/doc/cli/index.md
+
+# Set the version of all crates and python bindings
+set-version VERSION:
+    python -c 'import re, sys; [open(f, "w").write(re.sub(r"(?m)^version\s*=\s*\".*\"", f"version = \"{sys.argv[1]}\"", content)) for f in ["Cargo.toml"] if (content := open(f).read())]' {{VERSION}}
+
 # Run all Rust integration tests and Python pytest suite
 test: sync
     cargo test --workspace

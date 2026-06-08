@@ -31,19 +31,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # Optional: Compile Python API docs via Sphinx/Mkdocs if desired, 
-      # but cargo doc actually generates perfectly formatted PyO3 docs!
-      - name: Build Rust and PyO3 Documentation
-        run: cargo doc --no-deps --workspace
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
-      # We can also generate the CLI reference during the CI build
-      - name: Build CLI Markdown Documentation
-        run: |
-          mkdir -p target/doc/cli
-          echo "# CLI Reference" > target/doc/cli/index.md
-          echo "\`\`\`text" >> target/doc/cli/index.md
-          cargo run --bin zani -- --help >> target/doc/cli/index.md
-          echo "\`\`\`" >> target/doc/cli/index.md
+      - name: Install just
+        uses: taiki-e/install-action@just
+
+      - name: Build Rust, PyO3, and CLI Documentation
+        run: just docs
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
