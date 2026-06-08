@@ -286,7 +286,8 @@ impl Database {
         unsafe {
             let mut cparams = zstd_sys::ZSTD_getCParams(level, 0, raw_dict.len());
             if strategy as u32 != 0 {
-                cparams.strategy = std::mem::transmute::<u32, zstd_sys::ZSTD_strategy>(strategy as u32);
+                cparams.strategy =
+                    std::mem::transmute::<u32, zstd_sys::ZSTD_strategy>(strategy as u32);
             }
             let cdict_ptr = zstd_sys::ZSTD_createCDict_advanced(
                 raw_dict.as_ptr() as *const libc::c_void,
@@ -341,7 +342,8 @@ impl Database {
             unsafe {
                 let mut cparams = zstd_sys::ZSTD_getCParams(level, 0, raw_bytes.len());
                 if strategy as u32 != 0 {
-                    cparams.strategy = std::mem::transmute::<u32, zstd_sys::ZSTD_strategy>(strategy as u32);
+                    cparams.strategy =
+                        std::mem::transmute::<u32, zstd_sys::ZSTD_strategy>(strategy as u32);
                 }
                 let cdict_ptr = zstd_sys::ZSTD_createCDict_advanced(
                     raw_bytes.as_ptr() as *const libc::c_void,
