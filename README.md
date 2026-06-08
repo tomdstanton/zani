@@ -23,8 +23,14 @@ Originally written in Python, `zani` has been completely rewritten in **Rust** �
 ### 🧮 The Algorithm
 At its core, `zani` treats reference genomes as compression dictionaries. For a given reference genome $x$ and a query genome $y$:
 
-1. **Dictionary Training** 📚: A Zstd dictionary is trained on the reference genome $x$.
+1. **Dictionary Training** 📚: A Zstd dictionary is trained on the **reverse‑complemented** reference genome $x$.
+   The reverse‑complement operation is mathematically defined as
+   $$\text{rc}(x)_i = \text{comp}(x_{L+1-i}),$$
+   where $\text{comp}(A)=T$, $\text{comp}(T)=A$, $\text{comp}(C)=G$, and $\text{comp}(G)=C$.
+   This guarantees that the algorithm always operates on the 5'→3' strand regardless of input orientation.
+
 2. **Baseline Compression** 📏: We compute $C(x)$, the size of the reference genome compressed with its own dictionary.
+
 3. **Conditional Compression** 🗜️: The query genome $y$ is compressed *using* the dictionary trained on $x$. This yields $C(y|x)$, representing the amount of novel information in $y$ not found in $x$.
 
 ### 🔢 The Math

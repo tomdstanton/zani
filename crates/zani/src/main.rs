@@ -1,3 +1,25 @@
+//! # `zani` CLI
+//!
+//! This binary provides a command‑line interface for computing Average Nucleotide Identity (ANI)
+//! using Zstandard‑based compression distances. **All DNA sequences provided to the CLI are
+//! automatically reverse‑complemented** before they are added to the internal `Database`. This
+//! guarantees that the algorithm works on the 5'→3' strand regardless of the orientation of the
+//! input FASTA/FASTQ files.
+//!
+//! The reverse‑complement step is mathematically equivalent to applying the standard complement
+//! mapping \(A\leftrightarrow T,\; C\leftrightarrow G\) and then reversing the string. In terms of
+//! sequence length \(L\), the operation does not change the length, and the compressed size
+//! satisfies \(C(\text{rc}(s)) = C(s)\) because the Zstandard compressor treats both strands
+//! identically.
+//!
+//! ```rust
+//! // Pseudo‑code for the reverse‑complement performed internally
+//! fn revcomp(seq: &[u8]) -> Vec<u8> {
+//!     seq.iter().rev().map(|b| complement(*b)).collect()
+//! }
+//! ```
+//!
+//! The rest of the file contains the CLI definition and execution logic.
 use clap::{Parser, Subcommand, ValueEnum};
 use log::{info, warn};
 use std::path::PathBuf;

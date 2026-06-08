@@ -63,6 +63,10 @@ impl PyDatabase {
 
     /// Reads a FASTA/FASTQ file, compiles the sequences, and adds them to the database.
     ///
+    /// **Note:** All DNA sequences are automatically **reverse‑complemented** before being added to the
+    /// internal `Database`. This ensures that the algorithm always works on the 5'→3' strand, regardless
+    /// of the orientation of the input FASTA/FASTQ file.
+    ///
     /// Args:
     ///     filepath (str): Path to the `.fna` or `.fastq` file.
     ///     level (int): Zstandard compression level (typically 1-19).
