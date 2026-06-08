@@ -30,10 +30,10 @@ fn parse_strategy(s: &str) -> PyResult<CompressionStrategy> {
 /// It acts exactly like a native Python object, but holds pure Rust memory.
 ///
 /// **Architectural Note: Separation of Concerns**
-/// `Database` is intentionally separate from `Engine`. This class is strictly a **storage and I/O** 
-/// construct (parsing FASTAs, building Zstd dictionaries, and serializing/deserializing bytes). 
-/// By not holding transient execution state (like thread counts or batch sizes), multiple different 
-/// `Engine` instances can safely read from the exact same `Database` simultaneously across different 
+/// `Database` is intentionally separate from `Engine`. This class is strictly a **storage and I/O**
+/// construct (parsing FASTAs, building Zstd dictionaries, and serializing/deserializing bytes).
+/// By not holding transient execution state (like thread counts or batch sizes), multiple different
+/// `Engine` instances can safely read from the exact same `Database` simultaneously across different
 /// threads without locking or mutation.
 #[pyclass(name = "Database", module = "zani._zani_rs")]
 pub struct PyDatabase {
@@ -174,9 +174,9 @@ pyo3::create_exception!(
 /// This completely bypasses the Python interpreter and drops the GIL.
 ///
 /// **Architectural Note: Separation of Concerns**
-/// `Engine` is intentionally separate from `Database`. It is purely a **compute and scheduling** 
+/// `Engine` is intentionally separate from `Database`. It is purely a **compute and scheduling**
 /// construct. Keeping it separate prevents `Database` from becoming a monolithic "god object" and avoids
-/// ambiguity when comparing two databases (e.g., target vs query). It also allows you to configure an 
+/// ambiguity when comparing two databases (e.g., target vs query). It also allows you to configure an
 /// execution context once and apply it immutably to multiple isolated databases.
 #[pyclass(name = "Engine", module = "zani._zani_rs")]
 pub struct PyEngine {

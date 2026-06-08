@@ -211,10 +211,10 @@ impl Index<usize> for JaggedBytes {
 /// Holds the optimized Zstandard C-dictionaries, sequence metadata, and FASTA names.
 ///
 /// **Architectural Note: Separation of Concerns**
-/// `Database` is intentionally separate from `ZaniEngine`. This struct is strictly a **storage and I/O** 
-/// construct (parsing FASTAs, building Zstd dictionaries, and serializing/deserializing bytes). 
-/// By not holding transient execution state (like thread counts or batch sizes), multiple different 
-/// `ZaniEngine` instances can safely read from the exact same `Database` simultaneously across different 
+/// `Database` is intentionally separate from `ZaniEngine`. This struct is strictly a **storage and I/O**
+/// construct (parsing FASTAs, building Zstd dictionaries, and serializing/deserializing bytes).
+/// By not holding transient execution state (like thread counts or batch sizes), multiple different
+/// `ZaniEngine` instances can safely read from the exact same `Database` simultaneously across different
 /// threads without locking or mutation.
 ///
 /// Attributes:
@@ -532,9 +532,9 @@ impl Database {
 /// The Execution Engine for computing pairwise structural distances.
 ///
 /// **Architectural Note: Separation of Concerns**
-/// `ZaniEngine` is intentionally separate from `Database`. It is purely a **compute and scheduling** 
+/// `ZaniEngine` is intentionally separate from `Database`. It is purely a **compute and scheduling**
 /// construct. Keeping it separate prevents `Database` from becoming a monolithic "god object" and avoids
-/// ambiguity when comparing two databases (e.g., target vs query). It also allows you to configure an 
+/// ambiguity when comparing two databases (e.g., target vs query). It also allows you to configure an
 /// execution context once (via builder pattern) and apply it immutably to multiple isolated databases.
 pub struct ZaniEngine {
     compression_level: i32,
