@@ -4,3 +4,6 @@ members = [
     "crates/zani-py"
 ]
 resolver = "2"
+
+[workspace.package]
+version = "0.0.1-alpha.1" # Overwritten dynamically by CI!

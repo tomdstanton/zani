@@ -10,15 +10,12 @@
 [![Python Implementations](https://img.shields.io/pypi/implementation/zani.svg?style=flat-square&maxAge=600&label=impl)](https://pypi.org/project/zani/#files)
 [![Source](https://img.shields.io/badge/source-GitHub-303030.svg?maxAge=2678400&style=flat-square)](https://github.com/tomdstanton/zani/)
 [![Issues](https://img.shields.io/github/issues/tomdstanton/zani.svg?style=flat-square&maxAge=600)](https://github.com/tomdstanton/zani/issues)
-[![Downloads](https://img.shields.io/pypi/dm/zani?style=flat-square&color=303f9f&maxAge=86400&label=downloads)](https://pepy.tech/project/zani)[![License](https://img.shields.io/github/license/tomdstanton/zani)](https://img.shields.io/github/license/tomdstanton/zani)
 
-**Average Nucleotide Identity (ANI) estimator using Zstandard compression distance.**
+**High-Performance Average Nucleotide Identity (ANI) estimator using Zstandard compression distance.**
 
 ## About
-`zani` computes pairwise genomic distances using the Normalized Compression Distance (NCD) metric.
-Inspired by the pioneering work of [LZ-ANI](https://github.com/refresh-bio/LZ-ANI), `zani` leverages the
-blazing-fast **Zstandard (zstd)** compression algorithm to estimate Average Nucleotide Identity (ANI) without the need
-for expensive sequence alignments or k-mer counting.
+`zani` computes pairwise genomic distances using the Normalized Compression Distance (NCD) metric. 
+Originally written in Python, `zani` has been completely rewritten in **Rust** for bare-metal multi-threaded performance. It leverages the blazing-fast **Zstandard (zstd)** compression algorithm to estimate Average Nucleotide Identity (ANI) without the need for expensive sequence alignments or k-mer counting.
 
 ### The Algorithm
 At its core, `zani` treats reference genomes as compression dictionaries. For a given reference genome $x$ and a query genome $y$:
@@ -40,11 +37,11 @@ Furthermore, to avoid the performance penalty of compressing the query genome tw
 
 $$ C(y) \approx C(x) \times \frac{|y|}{|x|} $$
 
-This mathematical approach, combined with zero-copy memoryviews and thread-local C-contexts, allows `zani` to stream thousands of genomes through concurrent worker threads, achieving massive I/O throughput and utilizing 100% of available CPU cores.
+This mathematical approach, combined with zero-copy memoryviews, L1 cache optimization, and thread-safe C-contexts natively in Rust, allows `zani` to stream thousands of genomes through concurrent worker threads, achieving massive I/O throughput and utilizing 100% of available CPU cores.
 
 
 ## Installation
-`zani` can be installed with `pip`:
+`zani` is distributed as native pre-compiled binaries for Windows, macOS, and Linux.
 
 ```shell
 pip install zani
@@ -52,39 +49,52 @@ pip install zani
 
 ## CLI Usage 💻
 
-`zani` has a very basic CLI, use it like so:
+`zani` now comes with a compiled Rust CLI for massive throughput:
 
 ```shell
-❯ uv run zani -h
-usage: zani <genomes ...> [options]
+❯ zani --help
+ZANI: High-performance Lempel-Ziv structural genome distance.
 
-🧬🗜️🤪 Average Nucleotide Identity (ANI) estimator using Zstandard compression distance.
+Usage: zani <COMMAND>
 
-📁:
-  Input arguments
+Commands:
+  all-vs-all  Compute an all-vs-all pairwise distance matrix
+  build       (Future Command Idea) Pre-compile a database of genomes to disk
+  help        Print this message or the help of the given subcommand(s)
 
-  <genomes ...>       Paths to genomes in fasta format; Files may be compressed.
-  -a, --allvsall      Run all-vs-all comparison
-
-🛠️:
-  Other options
-
-  -t, --max-workers   Maximum number of threads to use for parallelization
-  -v, --version       Show version number and exit
-  -h, --help          Show this help message and exit
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
-## API Usage 💻
+### Running an All-vs-All Matrix
+```shell
+zani all-vs-all genome1.fasta genome2.fasta --output zani_matrix.tsv --level 3
+```
+
+
+## Python API Usage 💻
+
+The Python API has been completely rebuilt as a native PyO3 extension. It acts exactly like native Python objects, but drops the Global Interpreter Lock (GIL) to execute purely in Rust!
 
 ```python
-from pathlib import Path
-from zani import ZaniEngine
+import zani
 
-genomes = Path('genomes').glob('*.fasta.gz')
+# 1. Initialize an empty native database
+db = zani.Database()
 
-with ZaniEngine() as engine:
-    for result in engine.query(genomes):
-        print(result)
+# 2. Add FASTA files to compile Zstandard dictionaries
+db.add_fasta("genome_1.fasta", level=3, concat=True)
+db.add_fasta("genome_2.fasta", level=3, concat=True)
+
+# 3. Save/Load the compiled database to disk (Optional)
+db.save("my_genomes.zani")
+
+# 4. Initialize the execution Engine
+engine = zani.Engine(compression_level=3, batch_size=10_000)
+
+# 5. Run the multithreaded matrix! (Releases the GIL)
+engine.all_vs_all(db, output_filepath="results.tsv")
 ```
 
 
