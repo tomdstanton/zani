@@ -38,7 +38,7 @@ impl Into<CompressionStrategy> for CliStrategy {
     }
 }
 
-/// zani: Zstandard-based Average Nucleotide Identity (ANI).
+/// 🧬 zani: Zstandard-based Average Nucleotide Identity (ANI) 🗜️
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
@@ -49,7 +49,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Compute an all-vs-all pairwise distance matrix
+    /// 💥 Compute an all-vs-all pairwise distance matrix
     Ava {
         /// Input FASTA/FASTQ files to compare
         #[arg(required = true, num_args = 1..)]
@@ -84,7 +84,7 @@ enum Commands {
         db: Option<PathBuf>,
     },
 
-    /// Compute distances of queries against a compiled target database
+    /// 🔍 Compute distances of queries against a compiled target database
     Search {
         /// Input FASTA/FASTQ files to search
         #[arg(required = true, num_args = 1..)]
@@ -119,7 +119,7 @@ enum Commands {
         threads: usize,
     },
 
-    /// Pre-compile a database of genomes to disk
+    /// 💾 Pre-compile a database of genomes to disk
     Build {
         /// Input FASTA files
         #[arg(required = true, num_args = 1..)]
@@ -160,14 +160,14 @@ fn main() -> anyhow::Result<()> {
             threads,
             db: db_path,
         } => {
-            info!("Starting zani All-vs-All matrix calculation...");
-            info!("Compression Level: {}, Strategy: {:?}", level, strategy);
-            info!("Input Files: {}", genomes.len());
+            info!("💥 Starting zani All-vs-All matrix calculation...");
+            info!("🎛️ Compression Level: {}, Strategy: {:?}", level, strategy);
+            info!("📁 Input Files: {}", genomes.len());
 
             let start_time = Instant::now();
             let strat: CompressionStrategy = strategy.into();
 
-            info!("Step 1/3: Compiling genomes into Zstandard dictionaries...");
+            info!("🗜️ Step 1/3: Compiling genomes into Zstandard dictionaries...");
             let mut db = Database::new();
 
             for path in &genomes {
@@ -181,10 +181,10 @@ fn main() -> anyhow::Result<()> {
             if db.is_empty() {
                 return Err(anyhow::anyhow!("No valid genomes loaded. Exiting."));
             }
-            info!("Successfully compiled {} sketches.", db.len());
+            info!("✅ Successfully compiled {} sketches.", db.len());
 
             if let Some(path) = &db_path {
-                info!("Saving compiled database to {:?}...", path);
+                info!("💾 Saving compiled database to {:?}...", path);
                 if let Some(p_str) = path.to_str() {
                     if let Err(e) = db.save_to_disk(p_str) {
                         warn!("Failed to save database to disk: {}", e);
@@ -194,7 +194,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
 
-            info!("Step 2/3: Executing multi-threaded NxN compression matrix...");
+            info!("🚀 Step 2/3: Executing multi-threaded NxN compression matrix...");
             let engine = ZaniEngine::new()
                 .with_level(level)
                 .with_batch_size(batch_size)
@@ -209,16 +209,16 @@ fn main() -> anyhow::Result<()> {
                 });
 
                 if let Some(p) = &output {
-                    info!("Step 3/3: Streaming results to disk at {:?}", p);
+                    info!("💾 Step 3/3: Streaming results to disk at {:?}", p);
                 } else {
-                    info!("Step 3/3: Streaming results to stdout...");
+                    info!("🖥️ Step 3/3: Streaming results to stdout...");
                 }
                 io::write_tsv(rx, &db.names, &db.names, output.as_deref()).unwrap();
             });
 
             let duration = start_time.elapsed();
             info!(
-                "Matrix completed successfully in {:.2} seconds!",
+                "🎉 Matrix completed successfully in {:.2} seconds!",
                 duration.as_secs_f64()
             );
         }
@@ -233,18 +233,18 @@ fn main() -> anyhow::Result<()> {
             batch_size,
             threads,
         } => {
-            info!("Starting zani Search matrix calculation...");
+            info!("🔍 Starting zani Search matrix calculation...");
 
             let start_time = Instant::now();
             let strat: CompressionStrategy = strategy.into();
 
-            info!("Step 1/3: Loading Target Database from disk...");
+            info!("💾 Step 1/3: Loading Target Database from disk...");
             let target_db = match target_db_path.to_str() {
                 Some(p) => Database::load_from_disk(p, level, strat)?,
                 None => return Err(anyhow::anyhow!("Invalid database path.")),
             };
 
-            info!("Step 2/3: Compiling Query genomes into dictionaries...");
+            info!("🗜️ Step 2/3: Compiling Query genomes into dictionaries...");
             let mut query_db = Database::new();
             for path in &genomes {
                 if !path.exists() {
@@ -258,12 +258,12 @@ fn main() -> anyhow::Result<()> {
                 return Err(anyhow::anyhow!("No valid query genomes loaded. Exiting."));
             }
             info!(
-                "Successfully loaded {} targets and compiled {} queries.",
+                "✅ Successfully loaded {} targets and compiled {} queries.",
                 target_db.len(),
                 query_db.len()
             );
 
-            info!("Step 3/3: Executing multi-threaded NxM compression matrix...");
+            info!("🚀 Step 3/3: Executing multi-threaded NxM compression matrix...");
             let engine = ZaniEngine::new()
                 .with_level(level)
                 .with_batch_size(batch_size)
@@ -278,16 +278,16 @@ fn main() -> anyhow::Result<()> {
                 });
 
                 if let Some(p) = &output {
-                    info!("Streaming results to disk at {:?}", p);
+                    info!("💾 Streaming results to disk at {:?}", p);
                 } else {
-                    info!("Streaming results to stdout...");
+                    info!("🖥️ Streaming results to stdout...");
                 }
                 io::write_tsv(rx, &target_db.names, &query_db.names, output.as_deref()).unwrap();
             });
 
             let duration = start_time.elapsed();
             info!(
-                "Matrix completed successfully in {:.2} seconds!",
+                "🎉 Matrix completed successfully in {:.2} seconds!",
                 duration.as_secs_f64()
             );
         }
@@ -299,7 +299,7 @@ fn main() -> anyhow::Result<()> {
             strategy,
             concat,
         } => {
-            info!("Starting zani database compilation...");
+            info!("💾 Starting zani database compilation...");
             let strat: CompressionStrategy = strategy.into();
 
             let start_time = Instant::now();
@@ -317,18 +317,18 @@ fn main() -> anyhow::Result<()> {
                 return Err(anyhow::anyhow!("No valid genomes loaded. Exiting."));
             }
 
-            info!("Successfully compiled {} sketches.", db.len());
+            info!("✅ Successfully compiled {} sketches.", db.len());
 
             if let Some(p_str) = db_path.to_str() {
                 db.save_to_disk(p_str)?;
-                info!("Database written to: {}", p_str);
+                info!("💾 Database written to: {}", p_str);
             } else {
                 return Err(anyhow::anyhow!("Invalid database output path."));
             }
 
             let duration = start_time.elapsed();
             info!(
-                "Build completed successfully in {:.2} seconds!",
+                "🎉 Build completed successfully in {:.2} seconds!",
                 duration.as_secs_f64()
             );
         }
