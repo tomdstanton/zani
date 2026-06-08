@@ -21,6 +21,14 @@ release: sync
     cargo build --workspace --release
     uv run maturin develop --release
 
+# Generate CLI documentation from the binary help output
+doc-cli: build
+    mkdir -p docs
+    echo "# CLI Reference" > docs/cli.md
+    echo "\`\`\`text" >> docs/cli.md
+    cargo run --bin zani -- --help >> docs/cli.md
+    echo "\`\`\`" >> docs/cli.md
+
 # Run all Rust integration tests and Python pytest suite
 test: sync
     cargo test --workspace

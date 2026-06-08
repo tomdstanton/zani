@@ -3,46 +3,89 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      # This triggers the workflow ONLY when you push a tag that starts with 'v' (e.g., v0.1.0)
       - 'v*'
 
-# Required for Trusted Publishing to PyPI
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  build-and-publish:
-    name: Build and publish Python distribution 📦 to PyPI
+  linux:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          manylinux: auto
+          command: build
+          args: --release --out dist
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux
+          path: dist
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows
+          path: dist
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist --target ${{ matrix.target }}-apple-darwin
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist
+
+  publish:
+    name: Publish Python distribution 📦 to PyPI
+    runs-on: ubuntu-latest
+    needs: [linux, windows, macos, sdist]
     environment:
       name: pypi
       url: https://pypi.org/p/zani
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          # hatch-vcs needs the git history/tags to automatically determine the version number
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          # Must use '-dev' suffix for pre-release Python versions
-          python-version: "3.14-dev"
-
-      - name: Build the package
-        # Since you are a uv-powered pipeline, we use uv to build the sdist and wheel
-        run: uv build
+          path: dist
+          pattern: wheels-*
+          merge-multiple: true
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # The gh-action-pypi-publish action automatically looks in the dist/ folder
           packages-dir: dist/

@@ -20,7 +20,13 @@ pub struct PyDatabase {
 #[pymethods]
 impl PyDatabase {
     /// Initialize an empty database from Python.
-    /// Example: `db = zani.Database()`
+    ///
+    /// Returns:
+    ///     Database: A new, empty database.
+    ///
+    /// Example:
+    ///     >>> import zani
+    ///     >>> db = zani.Database()
     #[new]
     pub fn new() -> Self {
         Self {
@@ -29,12 +35,25 @@ impl PyDatabase {
     }
 
     /// Number of genomes currently loaded in the database.
-    /// Example: `len(db)`
+    ///
+    /// Returns:
+    ///     int: The number of compiled dictionaries in the database.
+    ///
+    /// Example:
+    ///     >>> len(db)
     pub fn __len__(&self) -> usize {
         self.inner.len()
     }
 
-    /// Read a FASTA/FASTQ file, compile the Zstandard dictionaries, and add to the database.
+    /// Reads a FASTA/FASTQ file, compiles the sequences, and adds them to the database.
+    ///
+    /// Args:
+    ///     filepath (str): Path to the `.fna` or `.fastq` file.
+    ///     level (int): Zstandard compression level (typically 1-19).
+    ///     concat (bool): If True, concatenates all sequences in the file into a single genome.
+    ///
+    /// Raises:
+    ///     PyFileNotFoundError: If the FASTA file is missing.
     pub fn add_fasta(&mut self, filepath: &str, level: i32, concat: bool) -> PyResult<()> {
         let path = Path::new(filepath);
         if !path.exists() {
@@ -48,15 +67,30 @@ impl PyDatabase {
         Ok(())
     }
 
-    /// Writer Class Method: Save the compiled C-struct database to disk as a binary `.zani` file.
+    /// Saves the compiled database to disk as a binary file.
+    ///
+    /// Args:
+    ///     filepath (str): Path to save the `.zani` database to.
+    ///
+    /// Raises:
+    ///     IOError: If writing to the disk fails.
     pub fn save(&self, filepath: &str) -> PyResult<()> {
         self.inner.save_to_disk(filepath).map_err(|e| {
             PyIOError::new_err(format!("Failed to write database to disk: {}", e))
         })
     }
 
-    /// Reader Class Method: Load a previously compiled `.zani` database from disk.
-    /// Because it relies on the C-FFI, we must re-instantiate the ZSTD dictionaries.
+    /// Load a previously compiled database from disk.
+    ///
+    /// Args:
+    ///     filepath (str): Path to the compiled `.zani` file.
+    ///     level (int): The original compression level used during creation.
+    ///
+    /// Returns:
+    ///     Database: The loaded database object.
+    ///
+    /// Raises:
+    ///     IOError: If reading from the disk fails.
     #[staticmethod]
     pub fn load(filepath: &str, level: i32) -> PyResult<Self> {
         let db = Database::load_from_disk(filepath, level).map_err(|e| {
@@ -85,16 +119,46 @@ pub struct PyEngine {
 
 #[pymethods]
 impl PyEngine {
+    /// Initializes the computation Engine.
+    ///
+    /// Args:
+    ///     compression_level (int): Zstandard compression level to use during execution (1-19).
+    ///     batch_size (int): Number of rows to process before flushing to disk.
+    ///
+    /// Returns:
+    ///     Engine: A highly optimized execution engine.
     #[new]
     #[pyo3(signature = (compression_level=3, batch_size=10_000))]
     pub fn new(compression_level: i32, batch_size: usize) -> Self {
         Self { compression_level, batch_size }
     }
 
+    /// Computes the All-vs-All pairwise distance matrix for a database.
+    ///
+    /// Releases the Python GIL and executes purely in Rust across all CPU cores.
+    ///
+    /// Args:
+    ///     db (Database): The target database to compute against itself.
+    ///     output_filepath (str): Path to output the resulting TSV matrix.
+    ///
+    /// Raises:
+    ///     IOError: If writing the TSV fails.
     pub fn all_vs_all(&self, py: Python, db: &PyDatabase, output_filepath: &str) -> PyResult<()> {
         self.search(py, db, db, output_filepath)
     }
 
+    /// Computes the structural distances between a query database and a target database.
+    ///
+    /// Releases the Python GIL and executes purely in Rust across all CPU cores.
+    ///
+    /// Args:
+    ///     db (Database): The reference target database.
+    ///     queries (Database): The query database.
+    ///     output_filepath (str): Path to output the resulting TSV matrix.
+    ///
+    /// Raises:
+    ///     IOError: If writing the TSV fails.
+    ///     ValueError: If either database is empty.
     pub fn search(&self, py: Python, db: &PyDatabase, queries: &PyDatabase, output_filepath: &str) -> PyResult<()> {
         if db.inner.is_empty() || queries.inner.is_empty() {
             return Err(PyValueError::new_err("Cannot run matrix: Database or Queries are empty."));

@@ -174,7 +174,14 @@ impl Index<usize> for JaggedBytes {
     }
 }
 
-/// The Main Memory-Mapped Database Struct
+/// The Main Memory-Mapped Database Struct.
+///
+/// Holds the optimized Zstandard C-dictionaries, sequence metadata, and FASTA names.
+///
+/// Attributes:
+///     names (JaggedBytes): Zero-overhead contiguous flat array for genome names.
+///     metadata (`Vec<SketchMeta>`): Packed metadata optimized for L1 cache.
+///     raw_dicts (JaggedBytes): Zero-overhead flat array for serialized dictionary bytes.
 #[derive(Serialize, Deserialize)]
 pub struct Database {
     pub names: JaggedBytes,
@@ -186,6 +193,10 @@ pub struct Database {
 }
 
 impl Database {
+    /// Creates a new, empty Database.
+    ///
+    /// Returns:
+    ///     Database: A new empty database instance.
     pub fn new() -> Self {
         Self {
             names: JaggedBytes::new(),
@@ -204,14 +215,29 @@ impl Default for Database {
 
 impl Database {
 
+    /// Returns the number of genomes in the database.
+    ///
+    /// Returns:
+    ///     usize: The number of compiled dictionaries.
     pub fn len(&self) -> usize {
         self.names.len()
     }
 
+    /// Checks if the database is empty.
+    ///
+    /// Returns:
+    ///     bool: True if empty, false otherwise.
     pub fn is_empty(&self) -> bool {
         self.names.len() == 0
     }
 
+    /// Pushes a compiled genome dictionary into the database.
+    ///
+    /// Args:
+    ///     name (&[u8]): The raw bytes of the genome name.
+    ///     meta (SketchMeta): The precomputed size and compression metadata.
+    ///     raw_dict (&[u8]): The serialized Zstandard dictionary bytes.
+    ///     level (i32): The compression level used.
     pub fn push(&mut self, name: &[u8], meta: SketchMeta, raw_dict: &[u8], level: i32) {
         self.names.push(name);
         self.metadata.push(meta);
@@ -228,11 +254,28 @@ impl Database {
         }
     }
 
+    /// Saves the database to disk natively.
+    ///
+    /// Args:
+    ///     filepath (&str): Path to write the .zani file to.
+    ///
+    /// Returns:
+    ///     bincode::Result<()>
     pub fn save_to_disk(&self, filepath: &str) -> bincode::Result<()> {
         let file = File::create(filepath)?;
         bincode::serialize_into(BufWriter::new(file), self)
     }
 
+    /// Loads a compiled database from disk.
+    ///
+    /// The C-dictionaries are automatically rebuilt during deserialization.
+    ///
+    /// Args:
+    ///     filepath (&str): Path to the .zani file.
+    ///     level (i32): The original compression level.
+    ///
+    /// Returns:
+    ///     `bincode::Result<Self>`: The deserialized database.
     pub fn load_from_disk(filepath: &str, level: i32) -> bincode::Result<Self> {
         let file = File::open(filepath)?;
         let mut db: Database = bincode::deserialize_from(BufReader::new(file))?;
@@ -311,6 +354,14 @@ impl Database {
         Some((name, meta, raw_dict))
     }
 
+    /// Compiles a raw FASTA file into the database.
+    ///
+    /// Multi-threaded parsing and compiling of sequences into Zstandard dictionaries.
+    ///
+    /// Args:
+    ///     filepath (&Path): Path to the FASTA/FASTQ file.
+    ///     level (i32): Compression level for the dictionaries.
+    ///     concat (bool): Whether to treat the file as a single concatenated genome or independent records.
     pub fn add_fasta(&mut self, filepath: &Path, level: i32, concat: bool) {
         use rayon::prelude::*;
         let mut reader = parse_fastx_file(filepath).expect("Invalid FASTA");
@@ -358,12 +409,17 @@ impl Database {
 // THE ZANI ENGINE (STREAMING MPSC MATRIX)
 // ==========================================
 
+/// The Execution Engine for computing pairwise structural distances.
 pub struct ZaniEngine {
     compression_level: i32,
     batch_size: usize,
 }
 
 impl ZaniEngine {
+    /// Creates a new Engine with default settings.
+    ///
+    /// Returns:
+    ///     ZaniEngine: Configured engine.
     pub fn new() -> Self {
         Self {
             compression_level: 3,
@@ -380,17 +436,38 @@ impl Default for ZaniEngine {
 
 impl ZaniEngine {
 
+    /// Sets the Zstandard compression level for the engine.
+    ///
+    /// Args:
+    ///     level (i32): Compression level (typically 1-19).
+    ///
+    /// Returns:
+    ///     Self: The modified engine builder.
     pub fn with_level(mut self, level: i32) -> Self {
         self.compression_level = level;
         self
     }
 
+    /// Sets the batch size for streaming TSV chunk creation.
+    ///
+    /// Args:
+    ///     size (usize): Size of the batches.
+    ///
+    /// Returns:
+    ///     Self: The modified engine builder.
     pub fn with_batch_size(mut self, size: usize) -> Self {
         self.batch_size = size;
         self
     }
 
-    /// Computes the All-vs-All matrix and streams Batched SoA chunks over a channel
+    /// Computes the pairwise NCD matrix and streams Batched SoA chunks over a channel.
+    ///
+    /// This method is highly optimized to run in a pure Rayon parallel context.
+    ///
+    /// Args:
+    ///     db (&Database): The target database to compress against.
+    ///     queries (&Database): The database of query sequences.
+    ///     tx (`mpsc::SyncSender<ZaniBatch>`): The channel to stream computed batches.
     pub fn query_matrix_batched(
         &self, 
         db: &Database, 

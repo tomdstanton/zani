@@ -1,0 +1,59 @@
+name: Deploy Documentation to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+
+  # Allows running the workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Optional: Compile Python API docs via Sphinx/Mkdocs if desired, 
+      # but cargo doc actually generates perfectly formatted PyO3 docs!
+      - name: Build Rust and PyO3 Documentation
+        run: cargo doc --no-deps --workspace
+
+      # We can also generate the CLI reference during the CI build
+      - name: Build CLI Markdown Documentation
+        run: |
+          mkdir -p target/doc/cli
+          echo "# CLI Reference" > target/doc/cli/index.md
+          echo "\`\`\`text" >> target/doc/cli/index.md
+          cargo run --bin zani -- --help >> target/doc/cli/index.md
+          echo "\`\`\`" >> target/doc/cli/index.md
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Deploy the Cargo Docs directory directly
+          path: './target/doc'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
