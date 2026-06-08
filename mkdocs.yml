@@ -1,0 +1,15 @@
+site_name: zani Documentation
+theme:
+  name: material
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [python]
+nav:
+  - Home: index.md
+  - CLI Reference: cli.md
+  - Python API Reference: python-api.md
+  - Rust API Reference: rust-api/zani/index.html
+  - Benchmarks: benchmarks.md

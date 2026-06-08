@@ -157,6 +157,10 @@ venv.bak/
 
 # mkdocs/zensical documentation
 /site
+docs/index.md
+docs/cli.md
+docs/benchmarks.md
+docs/rust-api/
 
 # mypy
 .mypy_cache/

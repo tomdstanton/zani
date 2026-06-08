@@ -91,6 +91,9 @@ zani build genome1.fasta genome2.fasta --db my_database.zani
 
 The Python API has been completely rebuilt as a native PyO3 extension. It acts exactly like native Python objects, but drops the Global Interpreter Lock (GIL) to execute purely in Rust!
 
+> [!NOTE]
+> Extensive Python API documentation is available! You can generate the HTML docs locally by running `just doc-api` (outputs to `docs/api`).
+
 ```python
 import zani
 

@@ -48,8 +48,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Deploy the Cargo Docs directory directly
-          path: './target/doc'
+          # Deploy the Zensical Docs directory
+          path: './site'
 
       - name: Deploy to GitHub Pages
         id: deployment

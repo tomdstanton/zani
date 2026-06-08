@@ -29,14 +29,29 @@ doc-cli: build
     cargo run --bin zani -- --help >> docs/cli.md
     echo "\`\`\`" >> docs/cli.md
 
-# Build Rust API documentation and generate CLI reference in target/doc
-docs: build
+# Generate benchmark documentation
+doc-bench: build
+    mkdir -p docs
+    echo "# Benchmarks" > docs/benchmarks.md
+    echo "\`\`\`text" >> docs/benchmarks.md
+    cargo bench --workspace >> docs/benchmarks.md || true
+    echo "\`\`\`" >> docs/benchmarks.md
+
+# Build all documentation and generate Zensical site
+docs: build doc-cli doc-bench
     cargo doc --no-deps --workspace
-    mkdir -p target/doc/cli
-    echo "# CLI Reference" > target/doc/cli/index.md
-    echo "\`\`\`text" >> target/doc/cli/index.md
-    cargo run --bin zani -- --help >> target/doc/cli/index.md
-    echo "\`\`\`" >> target/doc/cli/index.md
+    mkdir -p docs/rust-api
+    cp -r target/doc/* docs/rust-api/
+    cp README.md docs/index.md
+    uv run zensical build
+
+# Serve the documentation site locally
+docs-serve: docs
+    uv run zensical serve
+
+# Deploy the documentation to GitHub Pages
+docs-deploy: docs
+    uv run zensical gh-deploy --force
 
 # Set the version of all crates and python bindings
 set-version VERSION:
