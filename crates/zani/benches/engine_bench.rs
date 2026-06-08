@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::path::PathBuf;
 use zani::{Database, ZaniEngine};
 
@@ -10,7 +10,8 @@ fn get_test_data_dir() -> PathBuf {
 
 fn bench_database_compilation(c: &mut Criterion) {
     let test_dir = get_test_data_dir();
-    let files: Vec<PathBuf> = std::fs::read_dir(test_dir).unwrap()
+    let files: Vec<PathBuf> = std::fs::read_dir(test_dir)
+        .unwrap()
         .map(|res| res.unwrap().path())
         .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("gz"))
         .collect();
@@ -29,7 +30,7 @@ fn bench_database_compilation(c: &mut Criterion) {
 fn bench_matrix_execution(c: &mut Criterion) {
     let test_dir = get_test_data_dir();
     let mut db = Database::new();
-    
+
     for entry in std::fs::read_dir(test_dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
@@ -47,9 +48,9 @@ fn bench_matrix_execution(c: &mut Criterion) {
                 s.spawn(|| {
                     engine.query_matrix_batched(&db, &db, tx);
                 });
-                
+
                 // Drain the channel to simulate full matrix traversal
-                for _batch in rx { }
+                for _batch in rx {}
             });
         })
     });

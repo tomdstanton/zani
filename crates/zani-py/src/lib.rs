@@ -4,7 +4,23 @@ use pyo3::prelude::*;
 use std::path::Path;
 
 // Import the pure Rust engine from your workspace core crate
-use zani::{io, Database, ZaniEngine};
+use zani::{io, CompressionStrategy, Database, ZaniEngine};
+
+fn parse_strategy(s: &str) -> PyResult<CompressionStrategy> {
+    match s.to_lowercase().as_str() {
+        "auto" => Ok(CompressionStrategy::Auto),
+        "fast" => Ok(CompressionStrategy::Fast),
+        "dfast" => Ok(CompressionStrategy::Dfast),
+        "greedy" => Ok(CompressionStrategy::Greedy),
+        "lazy" => Ok(CompressionStrategy::Lazy),
+        "lazy2" => Ok(CompressionStrategy::Lazy2),
+        "btlazy2" => Ok(CompressionStrategy::BtLazy2),
+        "btopt" => Ok(CompressionStrategy::BtOpt),
+        "btultra" => Ok(CompressionStrategy::BtUltra),
+        "btultra2" => Ok(CompressionStrategy::BtUltra2),
+        _ => Err(PyValueError::new_err(format!("Invalid strategy: '{}'", s))),
+    }
+}
 
 // ==========================================
 // THE DATABASE WRAPPER (Reader & Writer)
@@ -50,11 +66,19 @@ impl PyDatabase {
     /// Args:
     ///     filepath (str): Path to the `.fna` or `.fastq` file.
     ///     level (int): Zstandard compression level (typically 1-19).
+    ///     strategy (str): LZ77 match finding strategy.
     ///     concat (bool): If True, concatenates all sequences in the file into a single genome.
     ///
     /// Raises:
     ///     PyFileNotFoundError: If the FASTA file is missing.
-    pub fn add_fasta(&mut self, filepath: &str, level: i32, concat: bool) -> PyResult<()> {
+    #[pyo3(signature = (filepath, level=3, strategy="lazy2", concat=true))]
+    pub fn add_fasta(
+        &mut self,
+        filepath: &str,
+        level: i32,
+        strategy: &str,
+        concat: bool,
+    ) -> PyResult<()> {
         let path = Path::new(filepath);
         if !path.exists() {
             return Err(PyFileNotFoundError::new_err(format!(
@@ -63,7 +87,8 @@ impl PyDatabase {
             )));
         }
 
-        self.inner.add_fasta(path, level, concat);
+        let strat = parse_strategy(strategy)?;
+        self.inner.add_fasta(path, level, strat, concat);
         Ok(())
     }
 
@@ -75,9 +100,9 @@ impl PyDatabase {
     /// Raises:
     ///     IOError: If writing to the disk fails.
     pub fn save(&self, filepath: &str) -> PyResult<()> {
-        self.inner.save_to_disk(filepath).map_err(|e| {
-            PyIOError::new_err(format!("Failed to write database to disk: {}", e))
-        })
+        self.inner
+            .save_to_disk(filepath)
+            .map_err(|e| PyIOError::new_err(format!("Failed to write database to disk: {}", e)))
     }
 
     /// Load a previously compiled database from disk.
@@ -85,6 +110,7 @@ impl PyDatabase {
     /// Args:
     ///     filepath (str): Path to the compiled `.zani` file.
     ///     level (int): The original compression level used during creation.
+    ///     strategy (str): The original compression strategy.
     ///
     /// Returns:
     ///     Database: The loaded database object.
@@ -92,18 +118,22 @@ impl PyDatabase {
     /// Raises:
     ///     IOError: If reading from the disk fails.
     #[staticmethod]
-    pub fn load(filepath: &str, level: i32) -> PyResult<Self> {
-        let db = Database::load_from_disk(filepath, level).map_err(|e| {
-            PyIOError::new_err(format!("Failed to load database from disk: {}", e))
-        })?;
+    #[pyo3(signature = (filepath, level=3, strategy="lazy2"))]
+    pub fn load(filepath: &str, level: i32, strategy: &str) -> PyResult<Self> {
+        let strat = parse_strategy(strategy)?;
+        let db = Database::load_from_disk(filepath, level, strat)
+            .map_err(|e| PyIOError::new_err(format!("Failed to load database from disk: {}", e)))?;
 
         Ok(Self { inner: db })
     }
 }
 
-
 // Custom error type for missing files
-pyo3::create_exception!(zani._zani_rs, PyFileNotFoundError, pyo3::exceptions::PyFileNotFoundError);
+pyo3::create_exception!(
+    zani._zani_rs,
+    PyFileNotFoundError,
+    pyo3::exceptions::PyFileNotFoundError
+);
 
 // ==========================================
 // THE EXECUTION ENGINE (Releasing the GIL)
@@ -115,6 +145,8 @@ pyo3::create_exception!(zani._zani_rs, PyFileNotFoundError, pyo3::exceptions::Py
 pub struct PyEngine {
     pub compression_level: i32,
     pub batch_size: usize,
+    pub threads: usize,
+    pub strategy: zani::CompressionStrategy,
 }
 
 #[pymethods]
@@ -124,13 +156,26 @@ impl PyEngine {
     /// Args:
     ///     compression_level (int): Zstandard compression level to use during execution (1-19).
     ///     batch_size (int): Number of rows to process before flushing to disk.
+    ///     threads (int): Number of threads. 0 = auto-detect all cores.
+    ///     strategy (str): Compression strategy.
     ///
     /// Returns:
     ///     Engine: A highly optimized execution engine.
     #[new]
-    #[pyo3(signature = (compression_level=3, batch_size=10_000))]
-    pub fn new(compression_level: i32, batch_size: usize) -> Self {
-        Self { compression_level, batch_size }
+    #[pyo3(signature = (compression_level=3, batch_size=10_000, threads=0, strategy="lazy2"))]
+    pub fn new(
+        compression_level: i32,
+        batch_size: usize,
+        threads: usize,
+        strategy: &str,
+    ) -> PyResult<Self> {
+        let strat = parse_strategy(strategy)?;
+        Ok(Self {
+            compression_level,
+            batch_size,
+            threads,
+            strategy: strat,
+        })
     }
 
     /// Computes the All-vs-All pairwise distance matrix for a database.
@@ -159,37 +204,41 @@ impl PyEngine {
     /// Raises:
     ///     IOError: If writing the TSV fails.
     ///     ValueError: If either database is empty.
-    pub fn search(&self, py: Python, db: &PyDatabase, queries: &PyDatabase, output_filepath: &str) -> PyResult<()> {
+    pub fn search(
+        &self,
+        py: Python,
+        db: &PyDatabase,
+        queries: &PyDatabase,
+        output_filepath: &str,
+    ) -> PyResult<()> {
         if db.inner.is_empty() || queries.inner.is_empty() {
-            return Err(PyValueError::new_err("Cannot run matrix: Database or Queries are empty."));
+            return Err(PyValueError::new_err(
+                "Cannot run matrix: Database or Queries are empty.",
+            ));
         }
 
         let out_path = Path::new(output_filepath);
         let engine = ZaniEngine::new()
             .with_level(self.compression_level)
-            .with_batch_size(self.batch_size);
+            .with_batch_size(self.batch_size)
+            .with_threads(self.threads)
+            .with_strategy(self.strategy);
 
         // RELEASE THE PYTHON GIL!
         let write_result = py.allow_threads(|| {
             let (tx, rx) = std::sync::mpsc::sync_channel(100);
-            
+
             std::thread::scope(|s| {
                 s.spawn(|| {
                     engine.query_matrix_batched(&db.inner, &queries.inner, tx);
                 });
 
-                io::write_tsv(
-                    rx,
-                    &db.inner.names,
-                    &queries.inner.names,
-                    out_path,
-                )
+                io::write_tsv(rx, &db.inner.names, &queries.inner.names, Some(out_path))
             })
         });
 
-        write_result.map_err(|e| {
-            PyIOError::new_err(format!("Failed to write TSV output to disk: {}", e))
-        })
+        write_result
+            .map_err(|e| PyIOError::new_err(format!("Failed to write TSV output to disk: {}", e)))
     }
 }
 
@@ -201,13 +250,13 @@ impl PyEngine {
 fn _zani_rs(py: Python, m: &PyModule) -> PyResult<()> {
     // Add our custom exceptions
     m.add("PyFileNotFoundError", py.get_type::<PyFileNotFoundError>())?;
-    
+
     // Add the Database Class
     m.add_class::<PyDatabase>()?;
-    
+
     // Add the Engine Class
     m.add_class::<PyEngine>()?;
-    
+
     Ok(())
 }
 impl Default for PyDatabase {

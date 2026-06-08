@@ -11,7 +11,7 @@ fn get_test_data_dir() -> PathBuf {
 fn test_all_vs_all_matrix() {
     let test_dir = get_test_data_dir();
     let mut db = Database::new();
-    
+
     if test_dir.exists() {
         for entry in std::fs::read_dir(test_dir).unwrap() {
             let entry = entry.unwrap();
@@ -21,7 +21,7 @@ fn test_all_vs_all_matrix() {
             }
         }
     }
-    
+
     let engine = ZaniEngine::new().with_level(3).with_batch_size(100);
     let (tx, rx) = std::sync::mpsc::sync_channel(100);
 
@@ -33,7 +33,10 @@ fn test_all_vs_all_matrix() {
         for batch in rx {
             for i in 0..batch.len() {
                 if batch.query_id == batch.target_ids[i] {
-                    println!("query_id: {}, c_y_given_x: {}, nt_match: {}", batch.query_id, batch.ncd_similarity[i], batch.nt_match[i]);
+                    println!(
+                        "query_id: {}, c_y_given_x: {}, nt_match: {}",
+                        batch.query_id, batch.ncd_similarity[i], batch.nt_match[i]
+                    );
                 }
             }
         }

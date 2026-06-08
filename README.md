@@ -53,7 +53,7 @@ pip install zani
 
 ```shell
 ❯ zani --help
-ZANI: High-performance Lempel-Ziv structural genome distance.
+zani: High-performance Lempel-Ziv structural genome distance.
 
 Usage: zani <COMMAND>
 
