@@ -24,10 +24,7 @@ release: sync
 # Generate CLI documentation from the binary help output
 doc-cli: build
     mkdir -p docs
-    echo "# CLI Reference" > docs/cli.md
-    echo "\`\`\`text" >> docs/cli.md
-    cargo run --bin zani -- --help >> docs/cli.md
-    echo "\`\`\`" >> docs/cli.md
+    uv run python docs/generate_cli_docs.py
 
 # Generate benchmark documentation
 doc-bench: build
