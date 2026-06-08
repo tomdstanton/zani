@@ -27,7 +27,7 @@ jobs:
           just set-version $VERSION
       - uses: PyO3/maturin-action@v1
         with:
-          manylinux: auto
+          manylinux: 2_28
           command: build
           args: --release --out dist
           before-script-linux: yum install -y clang
