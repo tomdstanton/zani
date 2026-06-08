@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
                 db.add_fasta(path, level, concat);
             }
 
-            if db.len() == 0 {
+            if db.is_empty() {
                 return Err(anyhow::anyhow!("No valid genomes loaded. Exiting."));
             }
             
@@ -110,7 +110,7 @@ fn main() -> anyhow::Result<()> {
             info!("Matrix completed successfully in {:.2} seconds!", duration.as_secs_f64());
         }
         
-        Commands::Build { genomes, output } => {
+        Commands::Build { genomes: _genomes, output: _output } => {
             // Future implementation: compile DB and call db.save_to_disk(&output)
             info!("Build command not yet implemented.");
         }

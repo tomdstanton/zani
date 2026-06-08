@@ -3,7 +3,7 @@ use zani::{Database, ZaniEngine};
 
 fn get_test_data_dir() -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("../../test_data");
+    path.push("../../tests/data");
     path
 }
 

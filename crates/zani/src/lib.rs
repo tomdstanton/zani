@@ -3,7 +3,7 @@
 //! alignment, zero-copy parsing, and bare-metal multi-threading.
 
 use mimalloc::MiMalloc;
-use needletail::{parse_fastx_file, Sequence};
+use needletail::parse_fastx_file;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -105,6 +105,7 @@ impl ZaniBatch {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn push(
         &mut self, target_id: u32, ani: f64, gani: f64, tani: f64, 
         cov: f64, ncd: f64, nt_match: u32, nt_mismatch: u32, 
@@ -120,6 +121,10 @@ impl ZaniBatch {
         self.nt_mismatch.push(nt_mismatch);
         self.num_alns.push(num_alns);
         self.len_ratio.push(len_ratio);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.target_ids.is_empty()
     }
 
     pub fn len(&self) -> usize {
@@ -138,10 +143,23 @@ impl JaggedBytes {
     pub fn new() -> Self {
         Self { data: Vec::new(), offsets: vec![0] }
     }
+}
+
+impl Default for JaggedBytes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl JaggedBytes {
     pub fn push(&mut self, item: &[u8]) {
         self.data.extend_from_slice(item);
         self.offsets.push(self.data.len());
     }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn len(&self) -> usize {
         self.offsets.len() - 1
     }
@@ -176,6 +194,15 @@ impl Database {
             cdicts: Vec::new(),
         }
     }
+}
+
+impl Default for Database {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Database {
 
     pub fn len(&self) -> usize {
         self.names.len()
@@ -246,11 +273,11 @@ impl Database {
 
         // 3. Train Dictionary
         let chunks: Vec<&[u8]> = pool.chunks(65536).collect();
-        let dict_size = std::cmp::min(1024 * 1024, std::cmp::max(pool.len() / 2, 1024));
+        let dict_size = (pool.len() / 2).clamp(1024, 1024 * 1024);
         let raw_dict = zstd::dict::from_samples(&chunks, dict_size).unwrap();
 
         // 4. Calibration C(x|x)
-        let mut compressed = 0;
+        let compressed;
         unsafe {
             let cctx = zstd_sys::ZSTD_createCCtx();
             let cdict = zstd_sys::ZSTD_createCDict(
@@ -291,7 +318,7 @@ impl Database {
 
         if concat {
             let meta = std::fs::metadata(filepath).map(|m| m.len() as usize).unwrap_or(0);
-            let capacity = if filepath.extension().map_or(false, |e| e == "gz") { meta * 3 } else { meta };
+            let capacity = if filepath.extension().is_some_and(|e| e == "gz") { meta * 3 } else { meta };
 
             let mut concat_seq: Vec<u8> = Vec::with_capacity(capacity);
             let mut first_name: Vec<u8> = Vec::new();
@@ -343,6 +370,15 @@ impl ZaniEngine {
             batch_size: 10_000,
         }
     }
+}
+
+impl Default for ZaniEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ZaniEngine {
 
     pub fn with_level(mut self, level: i32) -> Self {
         self.compression_level = level;
@@ -394,10 +430,10 @@ impl ZaniEngine {
                     let t_meta = db.metadata[t_idx];
                     let cdict = &db.cdicts[t_idx];
 
-                    let mut c_y_given_x = 0;
+                    let c_y_given_x;
                     let mut nt_match = 0;
                     let mut nt_mismatch = 0;
-                    let mut num_alns = 0;
+                    let num_alns;
 
                     unsafe {
                         let cctx = zstd_sys::ZSTD_createCCtx();
@@ -469,7 +505,7 @@ impl ZaniEngine {
                 }
                 
                 // Flush remaining rows
-                if local_batch.len() > 0 {
+                if !local_batch.is_empty() {
                     sender.send(local_batch).unwrap();
                 }
             });

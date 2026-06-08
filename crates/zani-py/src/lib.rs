@@ -1,4 +1,5 @@
-use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
+#![allow(non_local_definitions)]
+use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::Path;
 
@@ -95,7 +96,7 @@ impl PyEngine {
     }
 
     pub fn search(&self, py: Python, db: &PyDatabase, queries: &PyDatabase, output_filepath: &str) -> PyResult<()> {
-        if db.inner.len() == 0 || queries.inner.len() == 0 {
+        if db.inner.is_empty() || queries.inner.is_empty() {
             return Err(PyValueError::new_err("Cannot run matrix: Database or Queries are empty."));
         }
 
@@ -144,4 +145,9 @@ fn _zani_rs(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyEngine>()?;
     
     Ok(())
+}
+impl Default for PyDatabase {
+    fn default() -> Self {
+        Self::new()
+    }
 }
