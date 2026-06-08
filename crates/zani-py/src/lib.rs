@@ -92,6 +92,26 @@ impl PyDatabase {
         Ok(())
     }
 
+    /// Compiles a raw in-memory sequence and adds it to the database.
+    ///
+    /// Args:
+    ///     identifier (bytes): The raw bytes of the genome name.
+    ///     sequence (bytes): The raw bytes of the sequence.
+    ///     level (int): Zstandard compression level (typically 1-19).
+    ///     strategy (str): LZ77 match finding strategy.
+    #[pyo3(signature = (identifier, sequence, level=3, strategy="lazy2"))]
+    pub fn add_sequence(
+        &mut self,
+        identifier: &[u8],
+        sequence: &[u8],
+        level: i32,
+        strategy: &str,
+    ) -> PyResult<()> {
+        let strat = parse_strategy(strategy)?;
+        self.inner.add_sequence(identifier, sequence, level, strat);
+        Ok(())
+    }
+
     /// Saves the compiled database to disk as a binary file.
     ///
     /// Args:

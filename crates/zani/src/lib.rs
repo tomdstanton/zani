@@ -435,6 +435,10 @@ impl Database {
     ///
     /// Multi-threaded parsing and compiling of sequences into Zstandard dictionaries.
     ///
+    /// **The Chimeric Firewall**: If `concat` is true, a block of 10 'N's (`b"NNNNNNNNNN"`)
+    /// is inserted between each FASTA record. This acts as a Chimeric Firewall, cleanly
+    /// breaking LZ77 matches across contig boundaries to prevent artificial ANI inflation.
+    ///
     /// Args:
     ///     filepath (&Path): Path to the FASTA/FASTQ file.
     ///     level (i32): Compression level for the dictionaries.
@@ -491,6 +495,27 @@ impl Database {
 
         // Push to Database sequentially
         for (name, meta, raw_dict) in compiled {
+            self.push(&name, meta, &raw_dict, level, strategy);
+        }
+    }
+
+    /// Compiles a raw in-memory sequence into the database.
+    ///
+    /// Args:
+    ///     identifier (&[u8]): The raw bytes of the genome name.
+    ///     sequence (&[u8]): The raw bytes of the sequence.
+    ///     level (i32): Compression level for the dictionaries.
+    ///     strategy (CompressionStrategy): Compression strategy.
+    pub fn add_sequence(
+        &mut self,
+        identifier: &[u8],
+        sequence: &[u8],
+        level: i32,
+        strategy: CompressionStrategy,
+    ) {
+        if let Some((name, meta, raw_dict)) =
+            Self::compile_sequence(identifier.to_vec(), sequence, level)
+        {
             self.push(&name, meta, &raw_dict, level, strategy);
         }
     }

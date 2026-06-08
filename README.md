@@ -37,6 +37,9 @@ Furthermore, to avoid the performance penalty of compressing the query genome tw
 
 $$ C(y) \approx C(x) \times \frac{|y|}{|x|} $$
 
+### The Chimeric Firewall
+When concatenating multi-record draft genomes (e.g., thousands of small contigs) into a single sequence, `zani` automatically inserts a "Chimeric Firewall" of exactly 10 'N's (`NNNNNNNNNN`) between each contig boundary. Because Zstandard requires strictly contiguous exact-byte matches, this firewall mathematically guarantees that no LZ77 match can artificially bridge across two independent contigs, perfectly neutralizing artifactual ANI inflation without bloating the NCD baseline scores!
+
 This mathematical approach, combined with zero-copy memoryviews, L1 cache optimization, and thread-safe C-contexts natively in Rust, allows `zani` to stream thousands of genomes through concurrent worker threads, achieving massive I/O throughput and utilizing 100% of available CPU cores.
 
 
