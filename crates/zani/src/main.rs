@@ -21,9 +21,9 @@ enum CliStrategy {
     Btultra2,
 }
 
-impl Into<CompressionStrategy> for CliStrategy {
-    fn into(self) -> CompressionStrategy {
-        match self {
+impl From<CliStrategy> for CompressionStrategy {
+    fn from(val: CliStrategy) -> Self {
+        match val {
             CliStrategy::Auto => CompressionStrategy::Auto,
             CliStrategy::Fast => CompressionStrategy::Fast,
             CliStrategy::Dfast => CompressionStrategy::Dfast,
