@@ -1,15 +1,18 @@
 # `zani` 🧬🗜️🤪
 *pronounced zany (/ˈzeɪni/)*
 
+[![CI](https://img.shields.io/github/actions/workflow/status/tomdstanton/zani/ci.yml?label=tests&style=flat-square&logo=github)](https://github.com/tomdstanton/zani/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/github/actions/workflow/status/tomdstanton/zani/docs.yml?label=docs&style=flat-square&logo=github)](https://github.com/tomdstanton/zani/actions/workflows/docs.yml)
+[![Benchmarks](https://img.shields.io/github/actions/workflow/status/tomdstanton/zani/bench.yml?label=benchmarks&style=flat-square&logo=github)](https://github.com/tomdstanton/zani/actions/workflows/bench.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/tomdstanton/zani?style=flat-square&logo=codecov)](https://codecov.io/gh/tomdstanton/zani)
+
+[![Crates.io](https://img.shields.io/crates/v/zani?style=flat-square&logo=rust)](https://crates.io/crates/zani)
+[![PyPI](https://img.shields.io/pypi/v/zani.svg?style=flat-square&logo=pypi)](https://pypi.org/project/zani)
+[![Python Versions](https://img.shields.io/pypi/pyversions/zani.svg?style=flat-square&logo=python)](https://pypi.org/project/zani/#files)
+
 [![Release](https://img.shields.io/github/v/release/tomdstanton/zani?style=flat-square)](https://img.shields.io/github/v/release/tomdstanton/zani)
 [![License](https://img.shields.io/github/license/tomdstanton/zani?style=flat-square)](https://img.shields.io/github/license/tomdstanton/zani)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19059429.svg?style=flat-square)](https://doi.org/10.5281/zenodo.19059429)
-[![PyPI](https://img.shields.io/pypi/v/zani.svg?style=flat-square&maxAge=3600&logo=PyPI)](https://pypi.org/project/zani)
-[![Wheel](https://img.shields.io/pypi/wheel/zani.svg?style=flat-square&maxAge=3600)](https://pypi.org/project/zani/#files)
-[![Python Versions](https://img.shields.io/pypi/pyversions/zani.svg?style=flat-square&maxAge=600&logo=python)](https://pypi.org/project/zani/#files)
-[![Python Implementations](https://img.shields.io/pypi/implementation/zani.svg?style=flat-square&maxAge=600&label=impl)](https://pypi.org/project/zani/#files)
-[![Source](https://img.shields.io/badge/source-GitHub-303030.svg?maxAge=2678400&style=flat-square)](https://github.com/tomdstanton/zani/)
-[![Issues](https://img.shields.io/github/issues/tomdstanton/zani.svg?style=flat-square&maxAge=600)](https://github.com/tomdstanton/zani/issues)
 
 **High-Performance Average Nucleotide Identity (ANI) estimator using Zstandard compression distance.**
 
